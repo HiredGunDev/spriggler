@@ -1,0 +1,247 @@
+2024-12-30T16:58:08 - system - global - ERROR - Failed to load configuration: [Errno 2] No such file or directory: 'config.json'
+2024-12-30T16:58:08 - system - global - INFO - Spriggler system starting up.
+2024-12-30T16:58:20 - system - global - INFO - Spriggler system shutting down.
+2024-12-30T16:59:27 - system - global - INFO - Configuration loaded successfully.
+2024-12-30T16:59:27 - system - global - INFO - MockDevice created with ID: light_large, location: grow_large, address: mock://device_address, timeout: 300
+2024-12-30T16:59:27 - system - global - INFO - Initialized device: light_large
+2024-12-30T16:59:27 - system - global - INFO - MockDevice created with ID: heater_large, location: grow_large, address: mock://device_address, timeout: 300
+2024-12-30T16:59:27 - system - global - INFO - Initialized device: heater_large
+2024-12-30T16:59:27 - system - global - INFO - MockDevice created with ID: fan_large, location: grow_large, address: mock://device_address, timeout: 300
+2024-12-30T16:59:27 - system - global - INFO - Initialized device: fan_large
+2024-12-30T16:59:27 - system - global - INFO - MockDevice created with ID: humidifier_large, location: grow_large, address: mock://device_address, timeout: 300
+2024-12-30T16:59:27 - system - global - INFO - Initialized device: humidifier_large
+2024-12-30T16:59:27 - system - global - INFO - MockSensor created with ID: temp_large, name: temp_large, location: grow_large, address: mock://sensor_address_large, refresh_rate: 60, timeout: 300
+2024-12-30T16:59:27 - system - global - INFO - Initialized sensor: temp_large
+2024-12-30T16:59:27 - system - global - INFO - MockSensor created with ID: humidity_large, name: humidity_large, location: grow_large, address: mock://sensor_address_humidity_large, refresh_rate: 60, timeout: 300
+2024-12-30T16:59:27 - system - global - INFO - Initialized sensor: humidity_large
+2024-12-30T16:59:27 - system - global - INFO - MockSensor created with ID: temp_plenum, name: temp_plenum, location: plenum, address: mock://sensor_address_plenum, refresh_rate: 60, timeout: 300
+2024-12-30T16:59:27 - system - global - INFO - Initialized sensor: temp_plenum
+2024-12-30T16:59:27 - system - global - INFO - Spriggler system starting up.
+2024-12-30T16:59:27 - system - global - INFO - Reading data from MockSensor temp_large
+2024-12-30T17:27:16 - system     - global          - INFO     - Configuration loaded successfully.
+2024-12-30T17:27:16 - system     - global          - INFO     - MockDevice created with ID: light_large, location: grow_large, address: mock://device_address, timeout: 300
+2024-12-30T17:27:16 - control    - light_large     - INFO     - Initialized device: light_large
+2024-12-30T17:27:16 - system     - global          - INFO     - MockDevice created with ID: heater_large, location: grow_large, address: mock://device_address, timeout: 300
+2024-12-30T17:27:16 - control    - heater_large    - INFO     - Initialized device: heater_large
+2024-12-30T17:27:16 - system     - global          - INFO     - MockDevice created with ID: fan_large, location: grow_large, address: mock://device_address, timeout: 300
+2024-12-30T17:27:16 - control    - fan_large       - INFO     - Initialized device: fan_large
+2024-12-30T17:27:16 - system     - global          - INFO     - MockDevice created with ID: humidifier_large, location: grow_large, address: mock://device_address, timeout: 300
+2024-12-30T17:27:16 - control    - humidifier_large - INFO     - Initialized device: humidifier_large
+2024-12-30T17:27:16 - system     - global          - INFO     - MockSensor created with ID: temp_large, name: temp_large, location: grow_large, address: mock://sensor_address_large, refresh_rate: 60, timeout: 300
+2024-12-30T17:27:16 - sensor     - temp_large      - INFO     - Initialized sensor: temp_large
+2024-12-30T17:27:16 - system     - global          - INFO     - MockSensor created with ID: humidity_large, name: humidity_large, location: grow_large, address: mock://sensor_address_humidity_large, refresh_rate: 60, timeout: 300
+2024-12-30T17:27:16 - sensor     - humidity_large  - INFO     - Initialized sensor: humidity_large
+2024-12-30T17:27:16 - system     - global          - INFO     - MockSensor created with ID: temp_plenum, name: temp_plenum, location: plenum, address: mock://sensor_address_plenum, refresh_rate: 60, timeout: 300
+2024-12-30T17:27:16 - sensor     - temp_plenum     - INFO     - Initialized sensor: temp_plenum
+2024-12-30T17:27:16 - system     - global          - INFO     - Spriggler system starting up.
+2024-12-30T17:27:16 - system     - global          - INFO     - Reading data from MockSensor temp_large
+2024-12-30T17:27:16 - sensor     - temp_large      - INFO     - Sensor data: {'temperature': 72.0, 'humidity': 50.0}
+2024-12-30T17:27:16 - system     - global          - INFO     - Reading data from MockSensor humidity_large
+2024-12-30T17:27:16 - sensor     - humidity_large  - INFO     - Sensor data: {'temperature': 72.0, 'humidity': 50.0}
+2024-12-30T17:27:16 - system     - global          - INFO     - Reading data from MockSensor temp_plenum
+2024-12-30T17:27:16 - sensor     - temp_plenum     - INFO     - Sensor data: {'temperature': 72.0, 'humidity': 50.0}
+2025-01-03T21:45:04 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-03T21:45:04 - system     - global          - INFO     - MockDevice created with ID: light_large, location: grow_large, address: mock://device_address, timeout: 300
+2025-01-03T21:45:04 - control    - light_large     - INFO     - Initialized device: light_large
+2025-01-03T21:45:04 - system     - global          - INFO     - MockDevice created with ID: heater_large, location: grow_large, address: mock://device_address, timeout: 300
+2025-01-03T21:45:04 - control    - heater_large    - INFO     - Initialized device: heater_large
+2025-01-03T21:45:04 - system     - global          - INFO     - MockDevice created with ID: fan_large, location: grow_large, address: mock://device_address, timeout: 300
+2025-01-03T21:45:04 - control    - fan_large       - INFO     - Initialized device: fan_large
+2025-01-03T21:45:04 - system     - global          - INFO     - MockDevice created with ID: humidifier_large, location: grow_large, address: mock://device_address, timeout: 300
+2025-01-03T21:45:04 - control    - humidifier_large - INFO     - Initialized device: humidifier_large
+2025-01-03T21:45:04 - system     - global          - INFO     - MockSensor created with ID: temp_large, name: temp_large, location: grow_large, address: mock://sensor_address_large, refresh_rate: 60, timeout: 300
+2025-01-03T21:45:04 - sensor     - temp_large      - INFO     - Initialized sensor: temp_large
+2025-01-03T21:45:04 - system     - global          - INFO     - MockSensor created with ID: humidity_large, name: humidity_large, location: grow_large, address: mock://sensor_address_humidity_large, refresh_rate: 60, timeout: 300
+2025-01-03T21:45:04 - sensor     - humidity_large  - INFO     - Initialized sensor: humidity_large
+2025-01-03T21:45:04 - system     - global          - INFO     - MockSensor created with ID: temp_plenum, name: temp_plenum, location: plenum, address: mock://sensor_address_plenum, refresh_rate: 60, timeout: 300
+2025-01-03T21:45:04 - sensor     - temp_plenum     - INFO     - Initialized sensor: temp_plenum
+2025-01-03T21:45:04 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-03T21:45:04 - system     - global          - INFO     - Reading data from MockSensor temp_large
+2025-01-03T21:45:04 - sensor     - temp_large      - INFO     - Sensor data: {'temperature': 72.0, 'humidity': 50.0}
+2025-01-03T21:45:04 - system     - global          - INFO     - Reading data from MockSensor humidity_large
+2025-01-03T21:45:04 - sensor     - humidity_large  - INFO     - Sensor data: {'temperature': 72.0, 'humidity': 50.0}
+2025-01-03T21:45:04 - system     - global          - INFO     - Reading data from MockSensor temp_plenum
+2025-01-03T21:45:04 - sensor     - temp_plenum     - INFO     - Sensor data: {'temperature': 72.0, 'humidity': 50.0}
+2025-01-03T21:45:45 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-03T21:45:45 - control    - light_large     - ERROR    - Failed to initialize device light_large: 'model'
+2025-01-03T21:45:45 - control    - heater_large    - ERROR    - Failed to initialize device heater_large: 'model'
+2025-01-03T21:45:45 - control    - fan_large       - ERROR    - Failed to initialize device fan_large: 'model'
+2025-01-03T21:45:45 - control    - humidifier_large - ERROR    - Failed to initialize device humidifier_large: 'model'
+2025-01-03T21:48:43 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-03T21:48:43 - control    - fan_seedling    - ERROR    - Failed to initialize device fan_seedling: 'model'
+2025-01-03T21:48:43 - control    - heater_seedling - ERROR    - Failed to initialize device heater_seedling: 'model'
+2025-01-03T21:48:43 - control    - humidifier_seedling - ERROR    - Failed to initialize device humidifier_seedling: 'model'
+2025-01-03T21:48:43 - control    - lights_seedling - ERROR    - Failed to initialize device lights_seedling: 'model'
+2025-01-11T20:50:07 - system     - global          - ERROR    - Failed to load configuration: Missing required keys in configuration: name, environment, settings
+2025-01-11T20:50:07 - system     - global          - ERROR    - Exiting due to configuration error.
+2025-01-11T20:51:58 - system     - global          - ERROR    - Failed to load configuration: Missing required keys in configuration: name, environment, settings
+2025-01-11T20:51:58 - system     - global          - ERROR    - Exiting due to configuration error.
+2025-01-11T20:56:32 - system     - global          - ERROR    - Failed to load configuration: Missing required keys in configuration: name, environment, settings
+2025-01-11T20:56:32 - system     - global          - ERROR    - Exiting due to configuration error.
+2025-01-11T20:59:11 - system     - global          - ERROR    - Failed to load configuration: Missing required keys in configuration: name, environment, settings
+2025-01-11T20:59:11 - system     - global          - ERROR    - Exiting due to configuration error.
+2025-01-11T21:04:39 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-11T21:07:57 - system     - global          - ERROR    - Failed to load configuration: Configuration file not found: seedling.json
+2025-01-11T21:07:57 - system     - global          - ERROR    - Exiting due to configuration error.
+2025-01-11T21:08:24 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-11T21:08:24 - control    - heater_seedling - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-11T21:08:24 - control    - exhaust_fan_seedling - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-11T21:08:24 - control    - light_seedling  - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-11T21:08:24 - sensor     - temp_sensor_seedling - ERROR    - Failed to initialize sensor temp_sensor_seedling: No module named 'sensors.Govee_H5100_temperature'
+2025-01-11T21:08:24 - sensor     - humidity_sensor_seedling - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-11T21:08:24 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-11T21:08:40 - system     - global          - INFO     - Spriggler system shutting down.
+2025-01-11T21:40:06 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-11T21:40:06 - control    - heater_seedling - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-11T21:40:06 - control    - exhaust_fan_seedling - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-11T21:40:06 - control    - light_seedling  - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-11T21:40:06 - sensor     - temp_sensor_seedling - ERROR    - Failed to initialize sensor temp_sensor_seedling: No module named 'sensors.Govee_H5100_temperature'
+2025-01-11T21:40:06 - sensor     - humidity_sensor_seedling - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-11T21:40:06 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-11T21:40:14 - system     - global          - INFO     - Spriggler system shutting down.
+2025-01-12T19:30:10 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-12T19:30:10 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-12T19:30:10 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-12T19:30:10 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-12T19:30:10 - system     - global          - ERROR    - Failed to initialize sensor temp_sensor_seedling: No module named 'sensors.Govee_H5100_temperature'
+2025-01-12T19:30:10 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-12T19:30:10 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-12T19:51:36 - system     - global          - INFO     - Spriggler system shutting down.
+2025-01-12T19:51:36 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-12T19:51:36 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-12T19:51:36 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-12T19:51:36 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-12T19:51:36 - system     - global          - ERROR    - Failed to initialize sensor temp_sensor_seedling: No module named 'sensors.Govee_H5100_temperature'
+2025-01-12T19:51:36 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-12T19:51:36 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-12T19:51:41 - system     - global          - INFO     - Spriggler system shutting down.
+2025-01-12T19:51:41 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-12T19:51:41 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-12T19:51:41 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-12T19:51:41 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-12T19:51:41 - system     - global          - ERROR    - Failed to initialize sensor temp_sensor_seedling: No module named 'sensors.Govee_H5100_temperature'
+2025-01-12T19:51:41 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-12T19:51:41 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-12T19:52:52 - system     - global          - INFO     - Spriggler system shutting down.
+2025-01-12T20:18:37 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-12T20:18:37 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-12T20:18:37 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-12T20:18:37 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-12T20:18:37 - system     - global          - ERROR    - Failed to initialize sensor temp_sensor_seedling: No module named 'sensors.Govee_H5100_temperature'
+2025-01-12T20:18:37 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-12T20:18:37 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-12T20:18:44 - system     - global          - INFO     - Spriggler system shutting down.
+2025-01-13T10:19:20 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-13T10:19:20 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:19:20 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:19:20 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:19:20 - system     - global          - ERROR    - Failed to initialize sensor temp_sensor_seedling: No module named 'sensors.Govee_H5100_temperature'
+2025-01-13T10:19:20 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-13T10:19:20 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-13T10:20:10 - system     - global          - INFO     - Spriggler system shutting down.
+2025-01-13T10:20:16 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-13T10:20:16 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:20:16 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:20:16 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:20:16 - system     - global          - ERROR    - Failed to initialize sensor temp_sensor_seedling: No module named 'sensors.Govee_H5100_temperature'
+2025-01-13T10:20:16 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-13T10:20:16 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-13T10:24:50 - system     - global          - INFO     - Spriggler system shutting down.
+2025-01-13T10:24:55 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-13T10:24:55 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:24:55 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:24:55 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:24:55 - system     - global          - ERROR    - Failed to initialize sensor temp_sensor_seedling: module 'sensors.Govee_H5100_temperature' has no attribute 'GoveeH5100Temperature'
+2025-01-13T10:24:55 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-13T10:24:55 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-13T10:25:12 - system     - global          - INFO     - Spriggler system shutting down.
+2025-01-13T10:25:14 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-13T10:25:14 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:25:14 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:25:14 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:25:14 - system     - global          - INFO     - Initialized sensor: temp_sensor_seedling
+2025-01-13T10:25:14 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-13T10:25:14 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-13T10:30:15 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-13T10:30:15 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:30:15 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:30:15 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:30:15 - system     - global          - INFO     - Initialized sensor: temp_sensor_seedling
+2025-01-13T10:30:15 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-13T10:30:15 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-13T10:47:04 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-13T10:47:04 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:47:04 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:47:04 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:47:04 - system     - global          - INFO     - Initialized sensor: temp_sensor_seedling
+2025-01-13T10:47:04 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-13T10:47:04 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-13T10:51:04 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-13T10:51:04 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:51:04 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:51:04 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:51:04 - system     - global          - INFO     - Initialized sensor: temp_sensor_seedling
+2025-01-13T10:51:04 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-13T10:51:04 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-13T10:55:51 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-13T10:55:51 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:55:51 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:55:51 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T10:55:51 - system     - global          - INFO     - Initialized sensor: temp_sensor_seedling
+2025-01-13T10:55:51 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-13T10:55:51 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-13T10:55:51 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T10:55:52 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T10:55:53 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T10:55:54 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T11:04:49 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-13T11:04:49 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T11:04:49 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T11:04:49 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T11:04:49 - system     - global          - INFO     - Initialized sensor: temp_sensor_seedling
+2025-01-13T11:04:49 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-13T11:04:49 - sensor     - Govee5100Temperature - INFO     - GoveeH5100Temperature sensor initialized.
+2025-01-13T11:04:49 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-13T11:04:49 - sensor     - Govee5100Temperature - WARNING  - Attempted to read temperature, but sensor is not connected.
+2025-01-13T11:04:49 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T11:04:50 - sensor     - Govee5100Temperature - WARNING  - Attempted to read temperature, but sensor is not connected.
+2025-01-13T11:04:50 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T11:04:51 - sensor     - Govee5100Temperature - WARNING  - Attempted to read temperature, but sensor is not connected.
+2025-01-13T11:04:51 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T11:04:52 - sensor     - Govee5100Temperature - WARNING  - Attempted to read temperature, but sensor is not connected.
+2025-01-13T11:04:52 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T11:04:53 - sensor     - Govee5100Temperature - WARNING  - Attempted to read temperature, but sensor is not connected.
+2025-01-13T11:04:53 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T11:04:54 - sensor     - Govee5100Temperature - WARNING  - Attempted to read temperature, but sensor is not connected.
+2025-01-13T11:04:54 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T11:04:55 - sensor     - Govee5100Temperature - WARNING  - Attempted to read temperature, but sensor is not connected.
+2025-01-13T11:04:55 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T11:04:56 - sensor     - Govee5100Temperature - WARNING  - Attempted to read temperature, but sensor is not connected.
+2025-01-13T11:04:56 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T11:04:57 - sensor     - Govee5100Temperature - WARNING  - Attempted to read temperature, but sensor is not connected.
+2025-01-13T11:04:57 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T11:09:23 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-13T11:09:23 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T11:09:23 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T11:09:23 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T11:09:23 - system     - global          - INFO     - Initialized sensor: temp_sensor_seedling
+2025-01-13T11:09:23 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-13T11:09:23 - sensor     - GoveeH5100Temperature - INFO     - GoveeH5100Temperature sensor initialized.
+2025-01-13T11:09:23 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-13T11:09:23 - sensor     - GoveeH5100Temperature - WARNING  - Attempted to read temperature, but sensor is not connected.
+2025-01-13T11:09:23 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T11:09:24 - sensor     - GoveeH5100Temperature - WARNING  - Attempted to read temperature, but sensor is not connected.
+2025-01-13T11:09:24 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T11:09:25 - sensor     - GoveeH5100Temperature - WARNING  - Attempted to read temperature, but sensor is not connected.
+2025-01-13T11:09:25 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'Sensor not connected'}
+2025-01-13T13:36:37 - system     - global          - INFO     - Configuration loaded successfully.
+2025-01-13T13:36:37 - system     - global          - ERROR    - Failed to initialize device heater_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T13:36:37 - system     - global          - ERROR    - Failed to initialize device exhaust_fan_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T13:36:37 - system     - global          - ERROR    - Failed to initialize device light_seedling: No module named 'devices.KASA_Powerbar'
+2025-01-13T13:36:37 - system     - global          - INFO     - Initialized sensor: temp_sensor_seedling
+2025-01-13T13:36:37 - system     - global          - ERROR    - Failed to initialize sensor humidity_sensor_seedling: No module named 'sensors.Govee_H5100_humidity'
+2025-01-13T13:36:37 - system     - global          - INFO     - Spriggler system starting up.
+2025-01-13T13:36:37 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'No sensor data available'}
+2025-01-13T13:36:38 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'No sensor data available'}
+2025-01-13T13:36:39 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'No sensor data available'}
+2025-01-13T13:36:40 - sensor     - {'id': 'temp_sensor_seedling', 'what': 'temperature', 'how': 'Govee_H5100_temperature', 'config': {'identifier': '2650', 'refresh_rate': 30}} - INFO     - Sensor data: {'error': 'No sensor data available'}

@@ -1,0 +1,216 @@
+{
+  "environments": {
+    "defaults": {
+      "air": {
+        "source": "plenum",
+        "exhaust": "external"
+      }
+    },
+    "definitions": [
+      {
+        "id": "seedlings",
+        "name": "Seedling Pod",
+        "properties": {
+          "temperature": {
+            "sensors": [
+              "temp_sensor_seedling"
+            ],
+            "controllers": [
+              "heater_seedling",
+              "exhaust_fan_seedling"
+            ],
+            "schedules": [
+              "day_seedling",
+              "night_seedling"
+            ]
+          },
+          "humidity": {
+            "sensors": [
+              "humidity_sensor_seedling"
+            ],
+            "controllers": [
+              "humidifier_seedling",
+              "exhaust_fan_seedling"
+            ],
+            "schedules": [
+              "day_seedling",
+              "night_seedling"
+            ]
+          },
+          "illumination": {
+            "controllers": [
+              "light_seedling"
+            ],
+            "schedules": [
+              "day_seedling",
+              "night_seedling"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "sensors": {
+    "definitions": [
+      {
+        "id": "temp_sensor_seedling",
+        "what": "temperature",
+        "how": "Govee_H5100_temperature",
+        "config": {
+          "identifier": "2650",
+          "refresh_rate": 30
+        }
+      },
+      {
+        "id": "humidity_sensor_seedling",
+        "what": "humidity",
+        "how": "Govee_H5100_humidity",
+        "config": {
+          "identifier": "2650",
+          "refresh_rate": 30
+        }
+      }
+    ]
+  },
+  "devices": {
+    "defaults": {
+      "power": {
+        "circuit": "default_circuit",
+        "rating": 400
+      },
+      "effects": {
+        "heater": [
+          {
+            "property": "temperature",
+            "type": "increase"
+          }
+        ],
+        "exhaust_fan": [
+          {
+            "property": "temperature",
+            "type": "dynamic_effect"
+          },
+          {
+            "property": "humidity",
+            "type": "dynamic_effect"
+          }
+        ],
+        "humidifier": [
+          {
+            "property": "humidity",
+            "type": "increase"
+          }
+        ],
+        "light": [
+          {
+            "property": "illumination",
+            "type": "state"
+          }
+        ]
+      }
+    },
+    "definitions": [
+      {
+        "id": "heater_seedling",
+        "what": "heater",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "default_circuit",
+          "rating": 800
+        },
+        "control": {
+          "name": "seedling",
+          "outlet_name": "Heater"
+        }
+      },
+      {
+        "id": "exhaust_fan_seedling",
+        "what": "exhaust_fan",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "default_circuit",
+          "rating": 200
+        },
+        "control": {
+          "name": "seedling",
+          "outlet_name": "Fan"
+        }
+      },
+      {
+        "id": "light_seedling",
+        "what": "light",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "default_circuit",
+          "rating": 200
+        },
+        "control": {
+          "name": "seedling",
+          "outlet_name": "light"
+        }
+      }
+    ]
+  },
+  "circuits": {
+    "defaults": {
+      "max_load": 1800
+    },
+    "definitions": [
+      {
+        "id": "default_circuit",
+        "name": "15A Circuit for Seedling Pod"
+      }
+    ]
+  },
+  "schedules": {
+    "definitions": [
+      {
+        "id": "day_seedling",
+        "time_range": "06:00-18:00",
+        "targets": {
+          "temperature": {
+            "min": 70,
+            "max": 75
+          },
+          "humidity": {
+            "min": 50,
+            "max": 60
+          },
+          "illumination": "on"
+        }
+      },
+      {
+        "id": "night_seedling",
+        "time_range": "18:00-06:00",
+        "targets": {
+          "temperature": {
+            "min": 65,
+            "max": 70
+          },
+          "humidity": {
+            "min": 55,
+            "max": 65
+          },
+          "illumination": "off"
+        }
+      }
+    ]
+  },
+  "alerts": {
+    "defaults": {
+      "severity": "warning"
+    },
+    "definitions": [
+      {
+        "id": "high_temp_alert",
+        "condition": {
+          "sensor": "temp_sensor_seedling",
+          "operator": ">",
+          "value": 80
+        },
+        "message": "Temperature exceeds 80°F in Seedling Pod.",
+        "severity": "critical"
+      }
+    ]
+  }
+}
