@@ -1,27 +1,35 @@
 from loguru import logger
 
-def get_metadata():
-    return {
-        "model": "mock_device",
-        "description": "Mock Device for testing purposes",
-        "class": MockDevice,
-    }
 
 class MockDevice:
+    """Simple mock device used for integration testing."""
+
     def __init__(self, config):
         self.id = config.get("id", "mock_device")
-        self.location = config.get("location", "test_location")
-        self.address = config.get("address", "mock://device_address")
+        self.what = config.get("what", "device")
+        control = config.get("control", {})
+        self.name = control.get("name", self.id)
+        self.outlet_name = control.get("outlet_name", "outlet")
+        power = config.get("power", {})
+        self.power_rating = power.get("rating", 0)
+        self.circuit = power.get("circuit", "mock_circuit")
+        self.location = config.get("location", self.name)
+        self.address = config.get("address", control.get("ip_address", f"mock://{self.name}"))
         self.timeout = config.get("timeout", 300)
 
-        # Log the creation of the device
-        logger.info(
-            f"MockDevice created with ID: {self.id}, location: {self.location}, address: {self.address}, timeout: {self.timeout}",
-            extra={"log_type": "control", "context": self.id}
+    def initialize(self):
+        logger.bind(COMPONENT_TYPE="device", ENTITY_NAME=self.id).info(
+            "Mock device ready on circuit '{}' using outlet '{}' ({}W).",
+            self.circuit,
+            self.outlet_name,
+            self.power_rating,
         )
 
-    def initialize(self):
-        logger.info(
-            f"Initializing MockDevice {self.id} at {self.address} in {self.location}",
-            extra={"log_type": "control", "context": self.id}
-        )
+    def get_metadata(self):
+        return {
+            "id": self.id,
+            "what": self.what,
+            "circuit": self.circuit,
+            "outlet": self.outlet_name,
+            "power_rating": self.power_rating,
+        }

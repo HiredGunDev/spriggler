@@ -3,9 +3,12 @@ from config_loader import load_config, ConfigError
 from loaders.device_loader import load_devices
 from loaders.sensor_loader import load_sensors
 
+import asyncio
+import json
 import os
 import sys
-import asyncio
+import time
+from inspect import isawaitable, iscoroutinefunction
 
 class Spriggler:
     def __init__(self, config_path):
@@ -13,6 +16,10 @@ class Spriggler:
         self.config = {}
         self.devices = []
         self.sensors = []
+        self._sensor_metadata = {}
+        self._device_metadata = {}
+        self.loop_interval = 1.0
+        self.heartbeat_interval = 5.0
 
         # Setup logging
         self.setup_logging()
@@ -62,37 +69,174 @@ class Spriggler:
         """Initialize the configuration using config_loader."""
         try:
             self.config = load_config(self.config_path)
-            self.log("Configuration loaded successfully.", level="INFO", component_type="system", entity_name="global")
         except ConfigError as e:
-            self.log(f"Failed to load configuration: {e}", level="ERROR", component_type="system", entity_name="global")
+            self.log(
+                f"Failed to load configuration: {e}",
+                level="ERROR",
+                component_type="system",
+                entity_name="global",
+            )
             raise
+
+        # Allow optional runtime tuning when present in configuration extensions
+        runtime_settings = self.config.get("runtime", {})
+        self.loop_interval = float(runtime_settings.get("loop_interval_seconds", self.loop_interval))
+        self.heartbeat_interval = float(
+            runtime_settings.get("heartbeat_interval_seconds", self.heartbeat_interval)
+        )
+
+        config_snapshot = json.dumps(self.config, indent=2, sort_keys=True)
+        self.log(
+            "Configuration loaded successfully.",
+            level="INFO",
+            component_type="system",
+            entity_name="global",
+        )
+        self.log(
+            "Active configuration:",
+            level="INFO",
+            component_type="system",
+            entity_name="configuration",
+        )
+        for line in config_snapshot.splitlines():
+            self.log(
+                line,
+                level="INFO",
+                component_type="system",
+                entity_name="configuration",
+            )
 
     async def initialize_devices(self):
         """Initialize devices using the device loader."""
-        self.devices = load_devices(self.config.get("devices", {}).get("definitions", []))
+        device_definitions = self.config.get("devices", {}).get("definitions", [])
+        self.devices = load_devices(device_definitions)
+
+        self._device_metadata.clear()
+        for device, definition in zip(self.devices, device_definitions):
+            device_id = definition.get("id") or getattr(device, "id", "unknown")
+            initialize_method = getattr(device, "initialize", None)
+            if callable(initialize_method):
+                result = initialize_method()
+                if isawaitable(result):
+                    await result
+
+            metadata_provider = getattr(device, "get_metadata", None)
+            if callable(metadata_provider):
+                metadata = metadata_provider()
+            else:
+                metadata = {"id": device_id}
+
+            metadata.setdefault("id", device_id)
+            self._device_metadata[device_id] = metadata
+            self.log(
+                f"Device initialized: {json.dumps(metadata, sort_keys=True)}",
+                component_type="device",
+                entity_name=device_id,
+            )
 
     async def initialize_sensors(self):
         """Initialize sensors using the sensor loader."""
-        self.sensors = load_sensors(self.config.get("sensors", {}).get("definitions", []))
-        for sensor in self.sensors:
-            await sensor.initialize(logger)
+        sensor_definitions = self.config.get("sensors", {}).get("definitions", [])
+        self.sensors = load_sensors(sensor_definitions)
 
-    async def run(self):
+        self._sensor_metadata.clear()
+        for sensor, definition in zip(self.sensors, sensor_definitions):
+            sensor_id = definition.get("id") or getattr(sensor, "id", "unknown")
+            initialize_method = getattr(sensor, "initialize", None)
+            if callable(initialize_method):
+                try:
+                    if iscoroutinefunction(initialize_method):
+                        await initialize_method(logger)
+                    else:
+                        result = initialize_method(logger)
+                        if isawaitable(result):
+                            await result
+                except TypeError:
+                    result = initialize_method()
+                    if isawaitable(result):
+                        await result
+
+            metadata_provider = getattr(sensor, "get_metadata", None)
+            if callable(metadata_provider):
+                metadata = metadata_provider()
+            else:
+                metadata = {"id": sensor_id}
+
+            metadata.setdefault("id", sensor_id)
+            self._sensor_metadata[sensor] = metadata
+            self.log(
+                f"Sensor initialized: {json.dumps(metadata, sort_keys=True)}",
+                component_type="sensor",
+                entity_name=sensor_id,
+            )
+
+    async def run(self, max_cycles=None):
         """Main loop for running the Spriggler system."""
-        self.log("Spriggler system starting up.", level="INFO", component_type="system", entity_name="global")
+        self.log(
+            "Spriggler system starting up.",
+            level="INFO",
+            component_type="system",
+            entity_name="global",
+        )
+        heartbeat_timer = time.monotonic()
+        cycle_count = 0
         try:
             while True:
-                for sensor in self.sensors:
-                    sensor_data = await sensor.read()
+                await self._poll_sensors()
+
+                now = time.monotonic()
+                if now - heartbeat_timer >= self.heartbeat_interval:
                     self.log(
-                        f"Sensor data: {sensor_data}",
-                        level="INFO",
-                        component_type="sensor",
-                        entity_name=sensor.get_metadata().get("id", "unknown"),
+                        "Heartbeat: Spriggler is running.",
+                        component_type="system",
+                        entity_name="heartbeat",
                     )
-                await asyncio.sleep(1)  # Adjust loop delay as needed
+                    heartbeat_timer = now
+
+                cycle_count += 1
+                if max_cycles is not None and cycle_count >= max_cycles:
+                    break
+
+                await asyncio.sleep(self.loop_interval)
         except KeyboardInterrupt:
-            self.log("Spriggler system shutting down.", level="INFO", component_type="system", entity_name="global")
+            self.log(
+                "Spriggler system shutting down.",
+                level="INFO",
+                component_type="system",
+                entity_name="global",
+            )
+
+    async def _poll_sensors(self):
+        """Collect readings from all configured sensors."""
+        for sensor in self.sensors:
+            read_method = getattr(sensor, "read", None)
+            if not callable(read_method):
+                continue
+
+            try:
+                result = read_method()
+                if isawaitable(result):
+                    result = await result
+            except Exception as exc:  # pragma: no cover - log unexpected sensor errors
+                sensor_id = getattr(sensor, "id", "unknown")
+                self.log(
+                    f"Sensor read failure: {exc}",
+                    level="ERROR",
+                    component_type="sensor",
+                    entity_name=sensor_id,
+                )
+                continue
+
+            if result is None:
+                continue
+
+            sensor_metadata = self._sensor_metadata.get(sensor, {})
+            sensor_id = sensor_metadata.get("id") or getattr(sensor, "id", "unknown")
+            self.log(
+                f"Sensor data: {result}",
+                component_type="sensor",
+                entity_name=sensor_id,
+            )
 
 # Example usage
 async def main():
