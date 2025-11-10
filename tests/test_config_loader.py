@@ -23,5 +23,5 @@ def test_invalid_config_file():
 def test_partial_config():
     """Test behavior when the configuration file is missing required keys."""
     # Assuming `load_config` validates required keys
-    with pytest.raises(ConfigError, match="Missing"):
+    with pytest.raises(ConfigError, match="Schema validation error at header: Missing required property"):
         load_config('config/partial.json')

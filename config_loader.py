@@ -1,5 +1,8 @@
 import json
 import os
+from pathlib import Path
+
+from schema_validator import SchemaValidationError, validate_schema
 
 class ConfigError(Exception):
     """Custom exception for configuration-related errors."""
@@ -22,21 +25,27 @@ def load_config(config_file_path):
         raise ConfigError(f"Configuration file not found: {config_file_path}")
 
     try:
-        with open(config_file_path, 'r') as file:
+        with open(config_file_path, 'r', encoding='utf-8') as file:
             config = json.load(file)
     except json.JSONDecodeError as e:
         raise ConfigError(f"Invalid JSON in configuration file: {e}")
 
-    # Validation logic for seedling.json
-    if 'header' not in config or 'name' not in config['header']:
-        raise ConfigError("Missing 'header' or 'header.name' in configuration.")
+    schema_path = Path(__file__).with_name('docs').joinpath('configuration_schema.json')
+    try:
+        schema_text = schema_path.read_text(encoding='utf-8')
+    except FileNotFoundError as exc:
+        raise ConfigError(f"Configuration schema not found: {schema_path}") from exc
+    except OSError as exc:
+        raise ConfigError(f"Unable to read configuration schema: {schema_path}") from exc
 
-    if 'environments' not in config or 'definitions' not in config['environments']:
-        raise ConfigError("Missing 'environments.definitions' in configuration.")
+    try:
+        schema = json.loads(schema_text)
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"Invalid JSON in configuration schema: {exc}") from exc
 
-    if 'devices' not in config or 'definitions' not in config['devices']:
-        raise ConfigError("Missing 'devices.definitions' in configuration.")
-
-    # Additional validation can be added here if necessary
+    try:
+        validate_schema(config, schema)
+    except SchemaValidationError as exc:
+        raise ConfigError(f"Schema validation error at {exc.location}: {exc.message}") from exc
 
     return config
