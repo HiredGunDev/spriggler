@@ -1,0 +1,132 @@
+{
+  "header": {
+    "signature": "SprigglerConfig",
+    "version": "1.0",
+    "name": "mock_system",
+    "description": "Mock configuration for integration testing",
+    "author": "spriggler",
+    "created": "2024-01-01T00:00:00Z",
+    "modified": "2024-01-02T00:00:00Z",
+    "upstream": {
+      "url": "https://example.com/api"
+    }
+  },
+  "environments": {
+    "defaults": {
+      "air": {
+        "source": "test_source",
+        "exhaust": "test_exhaust"
+      }
+    },
+    "definitions": [
+      {
+        "id": "mock_environment",
+        "name": "Mock Environment",
+        "properties": {
+          "temperature": {
+            "sensors": ["mock_temperature_sensor"],
+            "controllers": ["mock_heater_device"],
+            "schedules": ["mock_day"]
+          }
+        }
+      }
+    ]
+  },
+  "sensors": {
+    "defaults": {
+      "config": {
+        "refresh_rate": 5
+      }
+    },
+    "definitions": [
+      {
+        "id": "mock_temperature_sensor",
+        "what": "temperature",
+        "how": "mock_sensor",
+        "config": {
+          "identifier": "sensor-001",
+          "address": "mock://sensor-001",
+          "refresh_rate": 5
+        }
+      }
+    ]
+  },
+  "devices": {
+    "defaults": {
+      "power": {
+        "circuit": "mock_circuit",
+        "rating": 100
+      },
+      "effects": {
+        "heater": [
+          {
+            "property": "temperature",
+            "type": "increase"
+          }
+        ]
+      }
+    },
+    "definitions": [
+      {
+        "id": "mock_heater_device",
+        "what": "heater",
+        "how": "mock_device",
+        "power": {
+          "circuit": "mock_circuit",
+          "rating": 100
+        },
+        "control": {
+          "name": "mock_control",
+          "outlet_name": "heater"
+        },
+        "effects": [
+          {
+            "property": "temperature",
+            "type": "increase"
+          }
+        ]
+      }
+    ]
+  },
+  "circuits": {
+    "defaults": {
+      "max_load": 1800
+    },
+    "definitions": [
+      {
+        "id": "mock_circuit",
+        "name": "Mock Circuit"
+      }
+    ]
+  },
+  "schedules": {
+    "definitions": [
+      {
+        "id": "mock_day",
+        "time_range": "00:00-23:59",
+        "targets": {
+          "temperature": {
+            "min": 68,
+            "max": 72
+          }
+        }
+      }
+    ]
+  },
+  "alerts": {
+    "defaults": {
+      "severity": "warning"
+    },
+    "definitions": [
+      {
+        "id": "mock_temperature_high",
+        "condition": {
+          "sensor": "mock_temperature_sensor",
+          "operator": ">",
+          "value": 80
+        },
+        "message": "Temperature exceeds threshold in mock environment."
+      }
+    ]
+  }
+}
