@@ -42,7 +42,7 @@ For detailed information about Spriggler, visit the `docs` directory.
 
 ### Included Documentation
 
-*   [Log File Format](docs/logfile_format.md): Describes the structure and purpose of Spriggler's logs.
+*   [Log File Format](docs/log_format.md): Describes the structure and purpose of Spriggler's logs.
 *   [Configuration](docs/configuration.md): Describes the Spriggler configuration file.
 *   [Configuration Schema](docs/configuration_schema.json): Formal JSON schema for the Spriggler configuration file.
 *   Additional documentation will be added as the project grows.
