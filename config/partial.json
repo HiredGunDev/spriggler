@@ -38,6 +38,9 @@
             ]
           },
           "illumination": {
+            "sensors": [
+              "light_sensor_seedling"
+            ],
             "controllers": [
               "light_seedling"
             ],
@@ -67,6 +70,15 @@
         "how": "Govee_H5100_humidity",
         "config": {
           "identifier": "2650",
+          "refresh_rate": 30
+        }
+      },
+      {
+        "id": "light_sensor_seedling",
+        "what": "illumination",
+        "how": "mock_sensor.MockSensor",
+        "config": {
+          "identifier": "light-seedling",
           "refresh_rate": 30
         }
       }
