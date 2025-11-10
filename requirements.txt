@@ -1,0 +1,6 @@
+# Core runtime dependencies
+loguru>=0.7,<1
+bleak>=0.21,<1
+
+# Development and testing
+pytest>=7,<8
