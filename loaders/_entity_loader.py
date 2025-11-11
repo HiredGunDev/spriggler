@@ -1,7 +1,7 @@
 """Shared utilities for loading pluggable devices and sensors."""
 
 from importlib import import_module
-from typing import Callable, Dict, Iterable, Tuple
+from typing import Callable, Dict, Iterable, Optional, Tuple
 
 from loguru import logger
 
@@ -34,7 +34,7 @@ def load_entities(
     *,
     package: str,
     kind: str,
-    config_adapter: ConfigAdapter | None = None,
+    config_adapter: Optional[ConfigAdapter] = None,
 ):
     """Load entities defined in configuration using dynamic imports."""
 
