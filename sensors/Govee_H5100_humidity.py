@@ -3,29 +3,26 @@ from bleak import BleakScanner
 from .govee_utils import GOVEE_H5100_MANUFACTURER_ID, decode_h5100_manufacturer_data
 
 
-class GoveeH5100Temperature:
-    """
-    A class to interface with the Govee H5100 BLE temperature sensor via advertisements.
-    """
+class GoveeH5100Humidity:
+    """Interface with the Govee H5100 BLE sensor for humidity readings."""
 
-    BLE_MANUFACTURER_ID = GOVEE_H5100_MANUFACTURER_ID  # Hardcoded Manufacturer ID for Govee H5100
+    BLE_MANUFACTURER_ID = GOVEE_H5100_MANUFACTURER_ID
 
     def __init__(self, identifier, refresh_rate=30):
-        self.identifier = identifier  # Sensor address or name (optional for scanning)
-        self.refresh_rate = refresh_rate  # Refresh rate in seconds
-        self.current_temperature = None  # Last retrieved temperature value
-        self.current_humidity = None  # Last retrieved humidity value
-        self.battery_level = None  # Last retrieved battery level
+        self.identifier = identifier
+        self.refresh_rate = refresh_rate
+        self.current_humidity = None
+        self.battery_level = None
         self.logger = None
         self.scanner = None
 
     async def initialize(self, spriggler_logger):
         """Initialize the sensor with the Spriggler logging system."""
         self.logger = spriggler_logger.bind(COMPONENT_TYPE="sensor", ENTITY_NAME=self.identifier)
-        self.logger.info("Govee5100Temperature sensor initialized.")
+        self.logger.info("Govee5100Humidity sensor initialized.")
 
     def handle_advertisement(self, device, advertisement_data):
-        """Process BLE advertisement data to extract sensor information."""
+        """Process BLE advertisement data to extract humidity information."""
         if not advertisement_data.manufacturer_data:
             return
 
@@ -35,12 +32,10 @@ class GoveeH5100Temperature:
 
         data = self.decode_manufacturer_data(manufacturer_data)
         if data:
-            self.current_temperature = data["temperature"] * 1.8 + 32  # Convert to Fahrenheit
             self.current_humidity = data["humidity"]
             self.battery_level = data["battery"]
             self.logger.info(
-                f"Temperature: {self.current_temperature:.2f}°F, Humidity: {self.current_humidity:.2f}%, "
-                f"Battery: {self.battery_level}%"
+                f"Humidity: {self.current_humidity:.2f}%, Battery: {self.battery_level if self.battery_level is not None else 'N/A'}%"
             )
         else:
             self.logger.warning("Failed to decode manufacturer data.")
@@ -59,12 +54,11 @@ class GoveeH5100Temperature:
             self.logger.info("BLE scanning stopped.")
 
     async def read(self):
-        """Retrieve the most recent temperature and humidity values."""
-        if self.current_temperature is None or self.current_humidity is None:
+        """Retrieve the most recent humidity value."""
+        if self.current_humidity is None:
             self.logger.warning("No sensor data available yet.")
             return {"error": "No sensor data available"}
         return {
-            "temperature": self.current_temperature,
             "humidity": self.current_humidity,
             "battery": self.battery_level,
         }
@@ -78,7 +72,7 @@ class GoveeH5100Temperature:
         """Return metadata about the sensor."""
         return {
             "id": self.identifier,
-            "type": "temperature_sensor",
-            "protocol": "Govee_H5100_temperature",
+            "type": "humidity_sensor",
+            "protocol": "Govee_H5100_humidity",
             "refresh_rate": self.refresh_rate,
         }

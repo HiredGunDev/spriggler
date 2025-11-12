@@ -174,6 +174,14 @@ Sensors provide data on environmental properties and are referenced by environme
 }
 ```
 
+### Govee H5100 advertisement modules
+
+- `Govee_H5100_temperature` listens for BLE advertisements and exposes
+  temperature, humidity, and battery values decoded from the payload.
+- `Govee_H5100_humidity` mirrors the advertisement workflow but focuses on
+  humidity and battery reporting. It can be configured with the same
+  `identifier` and optional `address` fields shown above.
+
 ---
 
 ## Devices
