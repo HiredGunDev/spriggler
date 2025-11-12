@@ -33,6 +33,25 @@ Getting Started
         python spriggler.py
 
 
+KASA Powerbar Integration
+-------------------------
+
+Spriggler now supports TP-Link KASA smart power strips for outlet-level control. To enable this integration:
+
+1.  Install the optional dependency:
+
+        pip install python-kasa
+
+2.  Ensure each smart strip is configured with a unique *Device Name* and that every outlet has a descriptive *Outlet Name* in the KASA mobile app.
+3.  Provide the names (or a static IP address) in the `devices[].control` block of your Spriggler configuration. See the [configuration guide](docs/configuration.md#devices) for field details.
+
+Troubleshooting tips:
+
+- Use the `kasa discover` CLI command (installed with `python-kasa`) to verify that your power strip is reachable on the network.
+- If network discovery fails, assign a static IP address to the strip and set `control.ip_address` (and optional `control.port`) in the configuration.
+- Confirm that the outlet names in your configuration exactly match the aliases shown in the KASA app; they are case-insensitive but must otherwise match.
+
+
 * * *
 
 Documentation

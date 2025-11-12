@@ -210,6 +210,20 @@ Devices are physical components (e.g., heaters, fans) that control environmental
         - **port** (integer, optional): Port number for direct connections (used if `name` is not provided).
     - `effects` (array, optional): Overrides default effects for the device.
 
+### TP-Link KASA Powerbar (`KASA_Powerbar`)
+
+The `KASA_Powerbar` device driver controls individual outlets on TP-Link KASA smart power strips using the [`python-kasa`](https://python-kasa.readthedocs.io/) library. The driver validates configuration at startup to ensure it can target the correct outlet.
+
+- **Dependencies**: Install `python-kasa` with `pip install python-kasa`.
+- **Required fields**:
+    - `control.outlet_name`: Must match the outlet alias defined in the KASA app. Matching is case-insensitive.
+    - Either `control.name` (the device alias used for auto-discovery) **or** `control.ip_address` (a static IP address). If discovery is unavailable or unreliable, provide the IP address and optional `control.port` (defaults to `9999`).
+- **Metadata**: Upon initialization, Spriggler records the resolved host, port, and the list of available outlets. This information appears in logs and diagnostic endpoints.
+- **Troubleshooting**:
+    - Run `kasa discover` to confirm the strip is reachable when using discovery by name.
+    - Verify the outlet aliases in your configuration match those displayed in the KASA app.
+    - Assign a static IP and set `control.ip_address` if the strip is on a different VLAN or discovery is blocked by network policies.
+
 ### Example
 
 ```json
