@@ -8,9 +8,11 @@ class GoveeH5100Humidity:
 
     BLE_MANUFACTURER_ID = GOVEE_H5100_MANUFACTURER_ID
 
-    def __init__(self, identifier, refresh_rate=30):
-        self.identifier = identifier
-        self.refresh_rate = refresh_rate
+    def __init__(self, config: dict):
+        self.config = dict(config)
+        self.id = self.config.get("id")
+        self.identifier = self.config.get("identifier") or self.id
+        self.refresh_rate = self.config.get("refresh_rate", 30)
         self.current_humidity = None
         self.battery_level = None
         self.logger = None
@@ -20,6 +22,7 @@ class GoveeH5100Humidity:
         """Initialize the sensor with the Spriggler logging system."""
         self.logger = spriggler_logger.bind(COMPONENT_TYPE="sensor", ENTITY_NAME=self.identifier)
         self.logger.info("Govee5100Humidity sensor initialized.")
+        await self.start_scanning()
 
     def handle_advertisement(self, device, advertisement_data):
         """Process BLE advertisement data to extract humidity information."""
@@ -42,8 +45,9 @@ class GoveeH5100Humidity:
 
     async def start_scanning(self):
         """Start scanning for BLE advertisements."""
-        self.scanner = BleakScanner()
-        self.scanner.register_detection_callback(self.handle_advertisement)
+        if self.scanner is None:
+            self.scanner = BleakScanner()
+            self.scanner.register_detection_callback(self.handle_advertisement)
         await self.scanner.start()
         self.logger.info("BLE scanning started.")
 
