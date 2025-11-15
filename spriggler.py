@@ -1,5 +1,6 @@
 from loguru import logger
 from config_loader import load_config, ConfigError
+from controllers.environment_controller import EnvironmentController
 from loaders.device_loader import load_devices
 from loaders.sensor_loader import load_sensors
 
@@ -18,8 +19,12 @@ class Spriggler:
         self.sensors = []
         self._sensor_metadata = {}
         self._device_metadata = {}
+        self._sensor_metadata_by_id = {}
+        self._sensors_by_id = {}
+        self._devices_by_id = {}
         self.loop_interval = 1.0
         self.heartbeat_interval = 5.0
+        self.environment_controller = None
 
         # Setup logging
         self.setup_logging()
@@ -112,6 +117,7 @@ class Spriggler:
         self.devices = load_devices(device_definitions)
 
         self._device_metadata.clear()
+        self._devices_by_id.clear()
         for device, definition in zip(self.devices, device_definitions):
             device_id = definition.get("id") or getattr(device, "id", "unknown")
             initialize_method = getattr(device, "initialize", None)
@@ -127,7 +133,9 @@ class Spriggler:
                 metadata = {"id": device_id}
 
             metadata.setdefault("id", device_id)
+            metadata.setdefault("what", definition.get("what"))
             self._device_metadata[device_id] = metadata
+            self._devices_by_id[device_id] = device
             self.log(
                 f"Device initialized: {json.dumps(metadata, sort_keys=True)}",
                 component_type="device",
@@ -140,6 +148,8 @@ class Spriggler:
         self.sensors = load_sensors(sensor_definitions)
 
         self._sensor_metadata.clear()
+        self._sensor_metadata_by_id.clear()
+        self._sensors_by_id.clear()
         for sensor, definition in zip(self.sensors, sensor_definitions):
             sensor_id = definition.get("id") or getattr(sensor, "id", "unknown")
             initialize_method = getattr(sensor, "initialize", None)
@@ -163,12 +173,29 @@ class Spriggler:
                 metadata = {"id": sensor_id}
 
             metadata.setdefault("id", sensor_id)
+            metadata.setdefault("what", definition.get("what"))
             self._sensor_metadata[sensor] = metadata
+            self._sensor_metadata_by_id[sensor_id] = metadata
+            self._sensors_by_id[sensor_id] = sensor
             self.log(
                 f"Sensor initialized: {json.dumps(metadata, sort_keys=True)}",
                 component_type="sensor",
                 entity_name=sensor_id,
             )
+
+    def initialize_controller(self):
+        """Create the environment controller from the loaded configuration."""
+
+        runtime_settings = self.config.get("runtime", {})
+        dry_run = bool(runtime_settings.get("dry_run", False))
+        debounce_seconds = float(runtime_settings.get("debounce_seconds", 5.0))
+
+        self.environment_controller = EnvironmentController(
+            config=self.config,
+            log_callback=self.log,
+            debounce_seconds=debounce_seconds,
+            dry_run=dry_run,
+        )
 
     async def run(self, max_cycles=None):
         """Main loop for running the Spriggler system."""
@@ -178,11 +205,19 @@ class Spriggler:
             component_type="system",
             entity_name="global",
         )
+        if self.environment_controller is None:
+            self.initialize_controller()
         heartbeat_timer = time.monotonic()
         cycle_count = 0
         try:
             while True:
-                await self._poll_sensors()
+                sensor_data = await self._poll_sensors()
+
+                if self.environment_controller:
+                    self.environment_controller.evaluate(
+                        sensor_data=sensor_data,
+                        devices=self._devices_by_id,
+                    )
 
                 now = time.monotonic()
                 if now - heartbeat_timer >= self.heartbeat_interval:
@@ -208,6 +243,7 @@ class Spriggler:
 
     async def _poll_sensors(self):
         """Collect readings from all configured sensors."""
+        readings = {}
         for sensor in self.sensors:
             read_method = getattr(sensor, "read", None)
             if not callable(read_method):
@@ -232,11 +268,14 @@ class Spriggler:
 
             sensor_metadata = self._sensor_metadata.get(sensor, {})
             sensor_id = sensor_metadata.get("id") or getattr(sensor, "id", "unknown")
+            readings[sensor_id] = result
             self.log(
                 f"Sensor data: {result}",
                 component_type="sensor",
                 entity_name=sensor_id,
             )
+
+        return readings
 
 # Example usage
 async def main():
@@ -251,6 +290,7 @@ async def main():
         await spriggler.initialize_config()
         await spriggler.initialize_devices()
         await spriggler.initialize_sensors()
+        spriggler.initialize_controller()
         await spriggler.run()
     except ConfigError:
         logger.error("Exiting due to configuration error.")

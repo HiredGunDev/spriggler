@@ -19,6 +19,7 @@ The configuration consists of the following sections:
 - **circuits**: Specifies power circuits for devices.
 - **schedules**: Controls operational behavior.
 - **alerts**: Defines conditions for triggering notifications.
+- **runtime**: Optional runtime tuning for loop cadence and controller safety.
 
 Each section supports:
 
@@ -66,6 +67,33 @@ The `header` section provides metadata about the configuration file, such as its
 "url": "https://igrow420.spriggle.diy/api",
 "auth_token": "abcd1234token"
 }
+}
+```
+
+---
+
+## Runtime
+
+### Description
+
+`runtime` settings control how often Spriggler loops, how frequently it emits heartbeats, and whether control decisions should
+be executed or logged as a dry run.
+
+### Schema
+
+- **loop_interval_seconds** (number, optional): Delay between control loop cycles. Defaults to `1.0` seconds.
+- **heartbeat_interval_seconds** (number, optional): Interval between heartbeat log entries. Defaults to `5.0` seconds.
+- **debounce_seconds** (number, optional): Minimum time between repeated commands to the same device. Defaults to `5.0` seconds.
+- **dry_run** (boolean, optional): When `true`, actuator commands are logged but not executed.
+
+### Example
+
+```json
+"runtime": {
+  "loop_interval_seconds": 2,
+  "heartbeat_interval_seconds": 10,
+  "debounce_seconds": 3,
+  "dry_run": true
 }
 ```
 
@@ -123,6 +151,28 @@ Environments now link directly to schedules for `targets`, removing redundancy a
   ]
 }
 ```
+
+---
+
+### Property, sensor, and device mapping
+
+Every property an environment controls must connect three things:
+
+1. **Sensors** that report the property (e.g., `temperature`). Each sensor ID listed under `properties.<property>.sensors` must
+   correspond to a sensor definition with a compatible `what` value.
+2. **Controllers** that can change the property. Devices listed in `properties.<property>.controllers` must declare an effect
+   for the property either in their `effects` array or via the `devices.defaults.effects` entry for the device's `what`.
+3. **Schedules** that define targets. Each schedule referenced in `properties.<property>.schedules` must contain a matching
+   `targets.<property>` object with `min` and/or `max` values. Optional `time_range` windows (e.g., `"07:00-19:00"`) limit
+   when a schedule is considered active.
+
+During each control loop the environment controller:
+
+- Collects the latest sensor readings for the property.
+- Picks the first schedule that is active for the current time and has targets for the property.
+- Compares the reading to the schedule's `min`/`max` bounds and issues `turn_on` or `turn_off` commands to controller devices
+  based on their declared effect (`increase` or `decrease`). Devices receive a command at most once every
+  `runtime.debounce_seconds` seconds to avoid rapid toggling.
 
 ---
 
