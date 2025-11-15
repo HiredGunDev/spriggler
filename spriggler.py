@@ -170,6 +170,26 @@ class Spriggler:
                 entity_name=sensor_id,
             )
 
+    async def shutdown(self):
+        """Cleanup resources before exiting the application."""
+        for sensor in self.sensors:
+            stop_method = getattr(sensor, "stop_scanning", None)
+            if not callable(stop_method):
+                continue
+
+            try:
+                result = stop_method()
+                if isawaitable(result):
+                    await result
+            except Exception as exc:  # pragma: no cover - defensive logging
+                sensor_id = getattr(sensor, "id", "unknown")
+                self.log(
+                    f"Sensor shutdown failure: {exc}",
+                    level="ERROR",
+                    component_type="sensor",
+                    entity_name=sensor_id,
+                )
+
     async def run(self, max_cycles=None):
         """Main loop for running the Spriggler system."""
         self.log(
@@ -254,6 +274,8 @@ async def main():
         await spriggler.run()
     except ConfigError:
         logger.error("Exiting due to configuration error.")
+    finally:
+        await spriggler.shutdown()
 
 if __name__ == "__main__":
     asyncio.run(main())
