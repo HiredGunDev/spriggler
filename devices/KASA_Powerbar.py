@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -67,24 +66,11 @@ class KasaPowerbar:
         self._strip: Optional[SmartStrip] = None
         self._outlet = None
         self.address: Optional[str] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._initialized = False
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
-    def _run_async(self, coro):
-        """Execute a coroutine on a dedicated asyncio event loop."""
-
-        if self._loop is None:
-            self._loop = asyncio.new_event_loop()
-        try:
-            asyncio.set_event_loop(self._loop)
-        except RuntimeError:
-            # Another loop is already running in this thread; continue with ours.
-            pass
-        return self._loop.run_until_complete(coro)
-
     async def _discover_host(self) -> str:
         """Locate the power strip by its configured friendly name."""
 
@@ -121,11 +107,11 @@ class KasaPowerbar:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def initialize(self) -> None:
+    async def initialize(self) -> None:
         """Initialize the underlying KASA device and outlet reference."""
 
         if self.device_name and not self.ip_address:
-            self.ip_address = self._run_async(self._discover_host())
+            self.ip_address = await self._discover_host()
 
         logger.bind(component="device", device_id=self.id).info(
             "Connecting to KASA power strip at %s (outlet '%s')",
@@ -134,7 +120,7 @@ class KasaPowerbar:
         )
 
         strip = SmartStrip(self.ip_address, port=self.port)
-        self._run_async(strip.update())
+        await strip.update()
         self._strip = strip
         self.address = strip.host
 
@@ -174,17 +160,17 @@ class KasaPowerbar:
         assert self._strip is not None  # noqa: S101 - defensive assertion
         return [getattr(child, "alias", "") for child in getattr(self._strip, "children", [])]
 
-    def turn_on(self) -> None:
+    async def turn_on(self) -> None:
         """Turn on the configured outlet."""
 
         self._ensure_initialized()
-        self._run_async(self._outlet.turn_on())
+        await self._outlet.turn_on()
         logger.debug("Issued ON command to %s", self.outlet_name)
 
-    def turn_off(self) -> None:
+    async def turn_off(self) -> None:
         """Turn off the configured outlet."""
 
         self._ensure_initialized()
-        self._run_async(self._outlet.turn_off())
+        await self._outlet.turn_off()
         logger.debug("Issued OFF command to %s", self.outlet_name)
 
