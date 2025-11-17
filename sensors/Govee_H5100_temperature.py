@@ -19,6 +19,7 @@ class GoveeH5100Temperature:
         self.config = dict(config)
         self.id = self.config.get("id")
         self.identifier = self.config.get("identifier") or self.id  # Sensor address or name
+        self.normalized_identifier = self._normalize_identifier(self.identifier)
         self.refresh_rate = self.config.get("refresh_rate", 30)  # Refresh rate in seconds
         self.current_temperature = None  # Last retrieved temperature value
         self.current_humidity = None  # Last retrieved humidity value
@@ -41,15 +42,28 @@ class GoveeH5100Temperature:
         if not manufacturer_data:
             return
 
-        if self.identifier and device is not None and (
-            (device.address and self.identifier not in device.address)
-            and (device.name and self.identifier not in device.name)
-        ):
-            # Ignore advertisements from other Govee devices.
-            return
-
         device_address = getattr(device, "address", None)
         device_name = getattr(device, "name", None)
+
+        if self.normalized_identifier and device is not None:
+            normalized_address = self._normalize_identifier(device_address)
+            normalized_name = self._normalize_identifier(device_name)
+
+            if not (
+                normalized_address == self.normalized_identifier
+                or normalized_name == self.normalized_identifier
+            ):
+                # Ignore advertisements from other Govee devices.
+                self.logger.debug(
+                    "Skipping advertisement due to identifier mismatch",
+                    configured_identifier=self.identifier,
+                    normalized_identifier=self.normalized_identifier,
+                    device_address=device_address,
+                    normalized_address=normalized_address,
+                    device_name=device_name,
+                    normalized_name=normalized_name,
+                )
+                return
 
         self.logger.debug(
             "Advertisement received",
@@ -106,3 +120,9 @@ class GoveeH5100Temperature:
             "protocol": "Govee_H5100_temperature",
             "refresh_rate": self.refresh_rate,
         }
+
+    @staticmethod
+    def _normalize_identifier(value):
+        if value is None:
+            return None
+        return value.lower().replace(":", "").replace("-", "").replace("_", "")
