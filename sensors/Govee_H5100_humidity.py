@@ -1,6 +1,8 @@
-from bleak import BleakScanner
-
-from .govee_utils import GOVEE_H5100_MANUFACTURER_ID, decode_h5100_manufacturer_data
+from .govee_utils import (
+    GOVEE_H5100_MANUFACTURER_ID,
+    decode_h5100_manufacturer_data,
+    get_shared_bleak_scanner,
+)
 
 
 class GoveeH5100Humidity:
@@ -60,9 +62,10 @@ class GoveeH5100Humidity:
     async def start_scanning(self):
         """Start scanning for BLE advertisements."""
         if self.scanner is None:
-            self.scanner = BleakScanner()
+            self.scanner = get_shared_bleak_scanner()
             self.scanner.register_detection_callback(self.handle_advertisement)
-        await self.scanner.start()
+        if not self.scanner.is_scanning:
+            await self.scanner.start()
         self.logger.info("BLE scanning started.")
 
     async def stop_scanning(self):
