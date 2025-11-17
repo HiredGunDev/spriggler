@@ -80,14 +80,14 @@ def test_initialize_with_discovery(monkeypatch):
         }
     )
 
-    device.initialize()
+    asyncio.run(device.initialize())
 
     assert device.address == "192.168.1.55"
     assert created_instances[0].updated is True
     assert device.get_metadata()["available_outlets"] == ["Heater"]
 
-    device.turn_on()
-    device.turn_off()
+    asyncio.run(device.turn_on())
+    asyncio.run(device.turn_off())
 
     assert heater_outlet.on_called is True
     assert heater_outlet.off_called is True
@@ -121,7 +121,7 @@ def test_initialize_with_static_ip(monkeypatch):
         }
     )
 
-    device.initialize()
+    asyncio.run(device.initialize())
 
     assert created_instances[0] == ("192.168.1.99", 12345)
 
@@ -146,7 +146,7 @@ def test_missing_outlet_raises(monkeypatch):
     )
 
     with pytest.raises(ValueError) as exc:
-        device.initialize()
+        asyncio.run(device.initialize())
 
     assert "Available outlets" in str(exc.value)
 

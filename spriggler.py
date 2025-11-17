@@ -122,9 +122,12 @@ class Spriggler:
             device_id = definition.get("id") or getattr(device, "id", "unknown")
             initialize_method = getattr(device, "initialize", None)
             if callable(initialize_method):
-                result = initialize_method()
-                if isawaitable(result):
-                    await result
+                if iscoroutinefunction(initialize_method):
+                    await initialize_method()
+                else:
+                    result = initialize_method()
+                    if isawaitable(result):
+                        await result
 
             metadata_provider = getattr(device, "get_metadata", None)
             if callable(metadata_provider):
