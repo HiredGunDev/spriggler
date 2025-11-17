@@ -23,7 +23,15 @@ def get_shared_bleak_scanner() -> BleakScanner:
     global _shared_bleak_scanner
 
     if _shared_bleak_scanner is None:
-        _shared_bleak_scanner = BleakScanner(detection_callback=_dispatch_detection)
+        try:
+            _shared_bleak_scanner = BleakScanner(
+                detection_callback=_dispatch_detection,
+                scanning_filter={"ManufacturerData": [GOVEE_H5100_MANUFACTURER_ID]},
+            )
+        except Exception:
+            # Some platforms or Bleak versions may not support manufacturer data
+            # filters. Fall back to a plain scanner so detection still works.
+            _shared_bleak_scanner = BleakScanner(detection_callback=_dispatch_detection)
     return _shared_bleak_scanner
 
 
