@@ -27,11 +27,26 @@ def get_shared_bleak_scanner() -> BleakScanner:
     return _shared_bleak_scanner
 
 
-def register_shared_detection_callback(callback: Callable) -> None:
+def register_shared_detection_callback(
+    callback: Callable, *, logger=None
+) -> None:
     """Register a detection callback without overwriting existing callbacks."""
 
     if callback not in _detection_callbacks:
         _detection_callbacks.append(callback)
+        if logger:
+            logger.debug(
+                "Registered new BLE detection callback",
+                callback_name=getattr(callback, "__name__", repr(callback)),
+                total_callbacks=len(_detection_callbacks),
+            )
+    else:
+        if logger:
+            logger.debug(
+                "Skipped duplicate BLE detection callback",
+                callback_name=getattr(callback, "__name__", repr(callback)),
+                total_callbacks=len(_detection_callbacks),
+            )
 
     # ``register_detection_callback`` is retained for compatibility with older
     # Bleak versions while still preferring the ``detection_callback`` constructor
@@ -39,9 +54,15 @@ def register_shared_detection_callback(callback: Callable) -> None:
     scanner = get_shared_bleak_scanner()
     try:
         scanner.register_detection_callback(_dispatch_detection)
+        if logger:
+            logger.debug("Re-registered shared BLE detection dispatcher with scanner")
     except AttributeError:
         # Older Bleak versions may not expose the register API; the constructor
         # callback already covers those cases.
+        if logger:
+            logger.debug(
+                "BleakScanner.register_detection_callback unavailable; relying on constructor callback"
+            )
         pass
 
 
@@ -54,8 +75,16 @@ async def ensure_shared_bleak_scanner_running(logger=None) -> BleakScanner:
     is_scanning = getattr(scanner, "is_scanning", None)
 
     if is_scanning is True or _shared_bleak_scanner_started:
+        if logger:
+            logger.debug(
+                "Shared BLE scanner already running",
+                is_scanning=is_scanning,
+                started_flag=_shared_bleak_scanner_started,
+            )
         return scanner
 
+    if logger:
+        logger.debug("Starting shared BLE scanner", is_scanning=is_scanning)
     await scanner.start()
     _shared_bleak_scanner_started = True
     if logger:
@@ -69,12 +98,24 @@ async def stop_shared_bleak_scanner(logger=None) -> None:
     global _shared_bleak_scanner_started
 
     if _shared_bleak_scanner is None:
+        if logger:
+            logger.debug("Shared BLE scanner stop requested but scanner is None")
         return
 
     is_scanning = getattr(_shared_bleak_scanner, "is_scanning", None)
     if is_scanning is False and not _shared_bleak_scanner_started:
+        if logger:
+            logger.debug(
+                "Shared BLE scanner already stopped",
+                is_scanning=is_scanning,
+                started_flag=_shared_bleak_scanner_started,
+            )
         return
 
+    if logger:
+        logger.debug(
+            "Stopping shared BLE scanner", is_scanning=is_scanning, started_flag=_shared_bleak_scanner_started
+        )
     await _shared_bleak_scanner.stop()
     _shared_bleak_scanner_started = False
     if logger:
