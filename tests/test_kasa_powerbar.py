@@ -38,9 +38,15 @@ class DummyOutlet:
         self.off_called = True
 
 
+class DummyProtocol:
+    def __init__(self, port=9999):
+        self.port = port
+
+
 class DummyStrip:
     def __init__(self, host="192.168.1.10", port=9999, outlets=None):
         self.host = host
+        self.protocol = DummyProtocol(port)
         self.port = port
         self.children = outlets or []
         self.updated = False
@@ -60,8 +66,8 @@ def test_initialize_with_discovery(monkeypatch):
 
     created_instances = []
 
-    def mock_smart_strip(host, port=9999):
-        strip = DummyStrip(host=host, port=port, outlets=[heater_outlet])
+    def mock_smart_strip(host):
+        strip = DummyStrip(host=host, outlets=[heater_outlet])
         created_instances.append(strip)
         return strip
 
@@ -82,8 +88,10 @@ def test_initialize_with_discovery(monkeypatch):
 
     asyncio.run(device.initialize())
 
+    strip = created_instances[0]
     assert device.address == "192.168.1.55"
-    assert created_instances[0].updated is True
+    assert strip.updated is True
+    assert strip.protocol.port == kasa_module.DEFAULT_KASA_PORT
     assert device.get_metadata()["available_outlets"] == ["Heater"]
 
     asyncio.run(device.turn_on())
@@ -98,9 +106,9 @@ def test_initialize_with_static_ip(monkeypatch):
 
     created_instances = []
 
-    def mock_smart_strip(host, port=9999):
-        strip = DummyStrip(host=host, port=port, outlets=[fan_outlet])
-        created_instances.append((host, port))
+    def mock_smart_strip(host):
+        strip = DummyStrip(host=host, outlets=[fan_outlet])
+        created_instances.append(strip)
         return strip
 
     async def fail_discovery():  # pragma: no cover - ensures discovery is not invoked
@@ -123,7 +131,9 @@ def test_initialize_with_static_ip(monkeypatch):
 
     asyncio.run(device.initialize())
 
-    assert created_instances[0] == ("192.168.1.99", 12345)
+    strip = created_instances[0]
+    assert strip.host == "192.168.1.99"
+    assert strip.protocol.port == 12345
 
 
 def test_missing_outlet_raises(monkeypatch):

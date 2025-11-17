@@ -119,7 +119,14 @@ class KasaPowerbar:
             self.outlet_name,
         )
 
-        strip = SmartStrip(self.ip_address, port=self.port)
+        strip = SmartStrip(self.ip_address)
+
+        if hasattr(strip, "protocol") and hasattr(strip.protocol, "port"):
+            strip.protocol.port = self.port
+
+        if hasattr(strip, "port"):
+            strip.port = self.port
+
         await strip.update()
         self._strip = strip
         self.address = strip.host
