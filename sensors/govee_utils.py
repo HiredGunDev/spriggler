@@ -8,6 +8,7 @@ from bleak import BleakScanner
 GOVEE_H5100_MANUFACTURER_ID = 0x88EC
 
 _shared_bleak_scanner: Optional[BleakScanner] = None
+_shared_bleak_scanner_started: bool = False
 
 
 def get_shared_bleak_scanner() -> BleakScanner:
@@ -23,6 +24,42 @@ def get_shared_bleak_scanner() -> BleakScanner:
     if _shared_bleak_scanner is None:
         _shared_bleak_scanner = BleakScanner()
     return _shared_bleak_scanner
+
+
+async def ensure_shared_bleak_scanner_running(logger=None) -> BleakScanner:
+    """Ensure the shared ``BleakScanner`` is running without relying on ``is_scanning``."""
+
+    global _shared_bleak_scanner_started
+
+    scanner = get_shared_bleak_scanner()
+    is_scanning = getattr(scanner, "is_scanning", None)
+
+    if is_scanning is True or _shared_bleak_scanner_started:
+        return scanner
+
+    await scanner.start()
+    _shared_bleak_scanner_started = True
+    if logger:
+        logger.info("BLE scanning started.")
+    return scanner
+
+
+async def stop_shared_bleak_scanner(logger=None) -> None:
+    """Stop the shared ``BleakScanner`` and reset the started flag."""
+
+    global _shared_bleak_scanner_started
+
+    if _shared_bleak_scanner is None:
+        return
+
+    is_scanning = getattr(_shared_bleak_scanner, "is_scanning", None)
+    if is_scanning is False and not _shared_bleak_scanner_started:
+        return
+
+    await _shared_bleak_scanner.stop()
+    _shared_bleak_scanner_started = False
+    if logger:
+        logger.info("BLE scanning stopped.")
 
 
 def decode_h5100_manufacturer_data(manufacturer_data: bytes) -> Optional[Dict[str, Optional[float]]]:

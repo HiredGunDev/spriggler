@@ -1,7 +1,9 @@
 from .govee_utils import (
     GOVEE_H5100_MANUFACTURER_ID,
     decode_h5100_manufacturer_data,
+    ensure_shared_bleak_scanner_running,
     get_shared_bleak_scanner,
+    stop_shared_bleak_scanner,
 )
 
 
@@ -69,15 +71,12 @@ class GoveeH5100Temperature:
         if self.scanner is None:
             self.scanner = get_shared_bleak_scanner()
             self.scanner.register_detection_callback(self.handle_advertisement)
-        if not self.scanner.is_scanning:
-            await self.scanner.start()
-        self.logger.info("BLE scanning started.")
+        await ensure_shared_bleak_scanner_running(self.logger)
 
     async def stop_scanning(self):
         """Stop BLE scanning."""
         if self.scanner:
-            await self.scanner.stop()
-            self.logger.info("BLE scanning stopped.")
+            await stop_shared_bleak_scanner(self.logger)
 
     async def read(self):
         """Retrieve the most recent temperature and humidity values."""
