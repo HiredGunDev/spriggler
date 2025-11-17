@@ -2,27 +2,26 @@
   "header": {
     "signature": "SprigglerConfig",
     "version": "1.0",
-    "name": "seedling_pod",
-    "description": "Configuration for a single seedling pod",
-    "author": "igrow420",
-    "created": "2025-01-05T12:00:00Z",
-    "modified": "2025-01-06T08:00:00Z",
+    "name": "seedling",
+    "description": "Single seedling environment migrated from growseedling",
+    "author": "growseedling",
+    "created": "2025-01-15T00:00:00Z",
+    "modified": "2025-01-15T00:00:00Z",
     "upstream": {
-      "url": "https://igrow420.spriggle.diy/api",
-      "auth_token": "abcd1234token"
+      "url": "https://growseedling.spriggle.diy/api"
     }
   },
   "environments": {
     "defaults": {
       "air": {
-        "source": "plenum",
+        "source": "ambient",
         "exhaust": "external"
       }
     },
     "definitions": [
       {
-        "id": "seedlings",
-        "name": "Seedling Pod",
+        "id": "seedling",
+        "name": "Seedling Tent",
         "properties": {
           "temperature": {
             "sensors": [
@@ -100,8 +99,8 @@
   "devices": {
     "defaults": {
       "power": {
-        "circuit": "default_circuit",
-        "rating": 400
+        "circuit": "seedling_circuit",
+        "rating": 800
       },
       "effects": {
         "heater": [
@@ -140,8 +139,8 @@
         "what": "heater",
         "how": "KASA_Powerbar",
         "power": {
-          "circuit": "default_circuit",
-          "rating": 800
+          "circuit": "seedling_circuit",
+          "rating": 1000
         },
         "control": {
           "name": "seedling",
@@ -149,11 +148,24 @@
         }
       },
       {
+        "id": "humidifier_seedling",
+        "what": "humidifier",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "seedling_circuit",
+          "rating": 500
+        },
+        "control": {
+          "name": "seedling",
+          "outlet_name": "Humidifier"
+        }
+      },
+      {
         "id": "exhaust_fan_seedling",
         "what": "exhaust_fan",
         "how": "KASA_Powerbar",
         "power": {
-          "circuit": "default_circuit",
+          "circuit": "seedling_circuit",
           "rating": 200
         },
         "control": {
@@ -166,12 +178,12 @@
         "what": "light",
         "how": "KASA_Powerbar",
         "power": {
-          "circuit": "default_circuit",
+          "circuit": "seedling_circuit",
           "rating": 200
         },
         "control": {
           "name": "seedling",
-          "outlet_name": "light"
+          "outlet_name": "Lights"
         }
       }
     ]
@@ -182,8 +194,8 @@
     },
     "definitions": [
       {
-        "id": "default_circuit",
-        "name": "15A Circuit for Seedling Pod"
+        "id": "seedling_circuit",
+        "name": "15A Circuit for Seedling Tent"
       }
     ]
   },
@@ -191,30 +203,30 @@
     "definitions": [
       {
         "id": "day_seedling",
-        "time_range": "06:00-18:00",
+        "time_range": "06:00-22:00",
         "targets": {
           "temperature": {
             "min": 70,
             "max": 75
           },
           "humidity": {
-            "min": 50,
-            "max": 60
+            "min": 60,
+            "max": 70
           },
           "illumination": "on"
         }
       },
       {
         "id": "night_seedling",
-        "time_range": "18:00-06:00",
+        "time_range": "22:00-06:00",
         "targets": {
           "temperature": {
             "min": 65,
             "max": 70
           },
           "humidity": {
-            "min": 55,
-            "max": 65
+            "min": 60,
+            "max": 70
           },
           "illumination": "off"
         }
@@ -227,14 +239,24 @@
     },
     "definitions": [
       {
-        "id": "high_temp_alert",
+        "id": "high_temp_seedling",
         "condition": {
           "sensor": "temp_sensor_seedling",
           "operator": ">",
           "value": 80
         },
-        "message": "Temperature exceeds 80°F in Seedling Pod.",
+        "message": "Seedling tent temperature exceeds 80F.",
         "severity": "critical"
+      },
+      {
+        "id": "high_humidity_seedling",
+        "condition": {
+          "sensor": "humidity_sensor_seedling",
+          "operator": ">",
+          "value": 80
+        },
+        "message": "Seedling tent humidity exceeds 80%.",
+        "severity": "warning"
       }
     ]
   }
