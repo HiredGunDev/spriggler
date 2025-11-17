@@ -33,6 +33,20 @@ class GoveeH5100Humidity:
         if not manufacturer_data:
             return
 
+        if self.identifier and (
+            (device.address and self.identifier not in device.address)
+            and (device.name and self.identifier not in device.name)
+        ):
+            # Ignore advertisements from other Govee devices.
+            return
+
+        self.logger.debug(
+            "Advertisement received",
+            device_address=device.address,
+            device_name=device.name,
+            manufacturer_data=manufacturer_data.hex() if hasattr(manufacturer_data, "hex") else manufacturer_data,
+        )
+
         data = self.decode_manufacturer_data(manufacturer_data)
         if data:
             self.current_humidity = data["humidity"]

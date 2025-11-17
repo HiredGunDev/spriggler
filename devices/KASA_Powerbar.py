@@ -124,9 +124,6 @@ class KasaPowerbar:
         if hasattr(strip, "protocol") and hasattr(strip.protocol, "port"):
             strip.protocol.port = self.port
 
-        if hasattr(strip, "port"):
-            strip.port = self.port
-
         await strip.update()
         self._strip = strip
         self.address = strip.host
