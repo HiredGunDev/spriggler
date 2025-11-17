@@ -1,6 +1,8 @@
-from bleak import BleakScanner
-
-from .govee_utils import GOVEE_H5100_MANUFACTURER_ID, decode_h5100_manufacturer_data
+from .govee_utils import (
+    GOVEE_H5100_MANUFACTURER_ID,
+    decode_h5100_manufacturer_data,
+    get_shared_bleak_scanner,
+)
 
 
 class GoveeH5100Temperature:
@@ -36,6 +38,20 @@ class GoveeH5100Temperature:
         if not manufacturer_data:
             return
 
+        if self.identifier and (
+            (device.address and self.identifier not in device.address)
+            and (device.name and self.identifier not in device.name)
+        ):
+            # Ignore advertisements from other Govee devices.
+            return
+
+        self.logger.debug(
+            "Advertisement received",
+            device_address=device.address,
+            device_name=device.name,
+            manufacturer_data=manufacturer_data.hex() if hasattr(manufacturer_data, "hex") else manufacturer_data,
+        )
+
         data = self.decode_manufacturer_data(manufacturer_data)
         if data:
             self.current_temperature = data["temperature"] * 1.8 + 32  # Convert to Fahrenheit
@@ -51,9 +67,10 @@ class GoveeH5100Temperature:
     async def start_scanning(self):
         """Start scanning for BLE advertisements."""
         if self.scanner is None:
-            self.scanner = BleakScanner()
+            self.scanner = get_shared_bleak_scanner()
             self.scanner.register_detection_callback(self.handle_advertisement)
-        await self.scanner.start()
+        if not self.scanner.is_scanning:
+            await self.scanner.start()
         self.logger.info("BLE scanning started.")
 
     async def stop_scanning(self):
