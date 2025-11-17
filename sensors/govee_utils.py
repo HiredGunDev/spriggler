@@ -1,7 +1,7 @@
 """Utility helpers for working with Govee BLE sensor payloads."""
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 from bleak import BleakScanner
 
@@ -9,6 +9,7 @@ GOVEE_H5100_MANUFACTURER_ID = 0x88EC
 
 _shared_bleak_scanner: Optional[BleakScanner] = None
 _shared_bleak_scanner_started: bool = False
+_detection_callbacks: List[Callable] = []
 
 
 def get_shared_bleak_scanner() -> BleakScanner:
@@ -22,8 +23,26 @@ def get_shared_bleak_scanner() -> BleakScanner:
     global _shared_bleak_scanner
 
     if _shared_bleak_scanner is None:
-        _shared_bleak_scanner = BleakScanner()
+        _shared_bleak_scanner = BleakScanner(detection_callback=_dispatch_detection)
     return _shared_bleak_scanner
+
+
+def register_shared_detection_callback(callback: Callable) -> None:
+    """Register a detection callback without overwriting existing callbacks."""
+
+    if callback not in _detection_callbacks:
+        _detection_callbacks.append(callback)
+
+    # ``register_detection_callback`` is retained for compatibility with older
+    # Bleak versions while still preferring the ``detection_callback`` constructor
+    # argument. Re-registering the dispatcher is safe and idempotent.
+    scanner = get_shared_bleak_scanner()
+    try:
+        scanner.register_detection_callback(_dispatch_detection)
+    except AttributeError:
+        # Older Bleak versions may not expose the register API; the constructor
+        # callback already covers those cases.
+        pass
 
 
 async def ensure_shared_bleak_scanner_running(logger=None) -> BleakScanner:
@@ -60,6 +79,18 @@ async def stop_shared_bleak_scanner(logger=None) -> None:
     _shared_bleak_scanner_started = False
     if logger:
         logger.info("BLE scanning stopped.")
+
+
+def _dispatch_detection(device, advertisement_data) -> None:
+    """Dispatch BLE detections to all registered callbacks."""
+
+    for callback in list(_detection_callbacks):
+        try:
+            callback(device, advertisement_data)
+        except Exception:
+            # Best-effort fan-out; individual callback failures should not
+            # prevent other listeners from receiving advertisements.
+            continue
 
 
 def decode_h5100_manufacturer_data(manufacturer_data: bytes) -> Optional[Dict[str, Optional[float]]]:
