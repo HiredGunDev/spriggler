@@ -30,16 +30,33 @@ class GoveeH5100Temperature:
     async def initialize(self, spriggler_logger):
         """Initialize the sensor with the Spriggler logging system."""
         self.logger = spriggler_logger.bind(COMPONENT_TYPE="sensor", ENTITY_NAME=self.identifier)
-        self.logger.info("Govee5100Temperature sensor initialized.")
+        self.logger.info(
+            "Govee5100Temperature sensor initialized.",
+            config=self.config,
+            normalized_identifier=self.normalized_identifier,
+        )
         await self.start_scanning()
 
     def handle_advertisement(self, device, advertisement_data):
         """Process BLE advertisement data to extract sensor information."""
+        self.logger.debug(
+            "Advertisement callback invoked",
+            device_address=getattr(device, "address", None),
+            device_name=getattr(device, "name", None),
+            manufacturer_data_present=bool(advertisement_data.manufacturer_data),
+        )
+
         if not advertisement_data.manufacturer_data:
+            self.logger.debug("No manufacturer data present on advertisement; skipping")
             return
 
         manufacturer_data = advertisement_data.manufacturer_data.get(self.BLE_MANUFACTURER_ID)
         if not manufacturer_data:
+            self.logger.debug(
+                "Manufacturer data missing for expected ID; skipping",
+                expected_manufacturer_id=self.BLE_MANUFACTURER_ID,
+                available_ids=list(advertisement_data.manufacturer_data.keys()),
+            )
             return
 
         device_address = getattr(device, "address", None)
@@ -70,10 +87,12 @@ class GoveeH5100Temperature:
             device_address=device_address,
             device_name=device_name,
             manufacturer_data=manufacturer_data.hex() if hasattr(manufacturer_data, "hex") else manufacturer_data,
+            manufacturer_data_length=len(manufacturer_data) if manufacturer_data is not None else 0,
         )
 
         data = self.decode_manufacturer_data(manufacturer_data)
         if data:
+            self.logger.debug("Decoded manufacturer data", decoded_payload=data)
             self.current_temperature = data["temperature"] * 1.8 + 32  # Convert to Fahrenheit
             self.current_humidity = data["humidity"]
             self.battery_level = data["battery"]
@@ -88,12 +107,21 @@ class GoveeH5100Temperature:
         """Start scanning for BLE advertisements."""
         if self.scanner is None:
             self.scanner = get_shared_bleak_scanner()
-            register_shared_detection_callback(self.handle_advertisement)
+            self.logger.debug(
+                "Registering advertisement callback and acquiring shared BLE scanner",
+                scanner_id=id(self.scanner),
+            )
+            register_shared_detection_callback(self.handle_advertisement, logger=self.logger)
+        else:
+            self.logger.debug(
+                "Reusing existing shared BLE scanner for temperature sensor", scanner_id=id(self.scanner)
+            )
         await ensure_shared_bleak_scanner_running(self.logger)
 
     async def stop_scanning(self):
         """Stop BLE scanning."""
         if self.scanner:
+            self.logger.debug("Stopping BLE scanning for temperature sensor", scanner_id=id(self.scanner))
             await stop_shared_bleak_scanner(self.logger)
 
     async def read(self):
@@ -101,6 +129,12 @@ class GoveeH5100Temperature:
         if self.current_temperature is None or self.current_humidity is None:
             self.logger.warning("No sensor data available yet.")
             return {"error": "No sensor data available"}
+        self.logger.debug(
+            "Returning latest sensor readings",
+            temperature_f=self.current_temperature,
+            humidity_percent=self.current_humidity,
+            battery_percent=self.battery_level,
+        )
         return {
             "temperature": self.current_temperature,
             "humidity": self.current_humidity,
