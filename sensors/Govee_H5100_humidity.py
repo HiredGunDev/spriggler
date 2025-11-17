@@ -3,6 +3,7 @@ from .govee_utils import (
     decode_h5100_manufacturer_data,
     ensure_shared_bleak_scanner_running,
     get_shared_bleak_scanner,
+    register_shared_detection_callback,
     stop_shared_bleak_scanner,
 )
 
@@ -37,17 +38,20 @@ class GoveeH5100Humidity:
         if not manufacturer_data:
             return
 
-        if self.identifier and (
+        if self.identifier and device is not None and (
             (device.address and self.identifier not in device.address)
             and (device.name and self.identifier not in device.name)
         ):
             # Ignore advertisements from other Govee devices.
             return
 
+        device_address = getattr(device, "address", None)
+        device_name = getattr(device, "name", None)
+
         self.logger.debug(
             "Advertisement received",
-            device_address=device.address,
-            device_name=device.name,
+            device_address=device_address,
+            device_name=device_name,
             manufacturer_data=manufacturer_data.hex() if hasattr(manufacturer_data, "hex") else manufacturer_data,
         )
 
@@ -65,7 +69,7 @@ class GoveeH5100Humidity:
         """Start scanning for BLE advertisements."""
         if self.scanner is None:
             self.scanner = get_shared_bleak_scanner()
-            self.scanner.register_detection_callback(self.handle_advertisement)
+            register_shared_detection_callback(self.handle_advertisement)
         await ensure_shared_bleak_scanner_running(self.logger)
 
     async def stop_scanning(self):
