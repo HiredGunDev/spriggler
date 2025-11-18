@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import time
+from inspect import isawaitable
 from typing import Dict, Iterable, List, Mapping, Optional
 
 from loguru import logger
@@ -40,7 +41,7 @@ class EnvironmentController:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def evaluate(
+    async def evaluate(
         self,
         *,
         sensor_data: Mapping[str, object],
@@ -95,7 +96,7 @@ class EnvironmentController:
                     entity=environment_id,
                 )
 
-                self._apply_device_commands(
+                await self._apply_device_commands(
                     environment_id=environment_id,
                     property_name=property_name,
                     decision=decision,
@@ -175,7 +176,7 @@ class EnvironmentController:
             return "decrease"
         return "stable"
 
-    def _apply_device_commands(
+    async def _apply_device_commands(
         self,
         *,
         environment_id: str,
@@ -204,7 +205,7 @@ class EnvironmentController:
                 if not command:
                     continue
 
-                self._issue_command(
+                await self._issue_command(
                     device_id=device_id,
                     devices=devices,
                     command=command,
@@ -232,7 +233,7 @@ class EnvironmentController:
 
         return None
 
-    def _issue_command(
+    async def _issue_command(
         self,
         *,
         device_id: str,
@@ -282,7 +283,10 @@ class EnvironmentController:
             return
 
         try:
-            command_fn()
+            result = command_fn()
+            if isawaitable(result):
+                await result
+
             self._log(summary, level="INFO", entity=environment_id)
             self._last_commands[device_id] = (command, now)
         except Exception as exc:  # pragma: no cover - defensive logging

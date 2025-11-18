@@ -236,7 +236,7 @@ class Spriggler:
                 sensor_data = await self._poll_sensors()
 
                 if self.environment_controller:
-                    self.environment_controller.evaluate(
+                    await self.environment_controller.evaluate(
                         sensor_data=sensor_data,
                         devices=self._devices_by_id,
                     )
