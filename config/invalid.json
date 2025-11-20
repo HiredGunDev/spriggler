@@ -51,9 +51,7 @@
             ]
           },
           "illumination": {
-            "sensors": [
-              "light_sensor_seedling"
-            ],
+            "sensors": [],
             "controllers": [
               "light_seedling"
             ],
@@ -86,15 +84,6 @@
           "refresh_rate": 30
         }
       },
-      {
-        "id": "light_sensor_seedling",
-        "what": "illumination",
-        "how": "mock_sensor.MockSensor",
-        "config": {
-          "identifier": "light-seedling",
-          "refresh_rate": 30
-        }
-      }
     ]
   },
   "devices": {
