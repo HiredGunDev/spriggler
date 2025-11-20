@@ -54,18 +54,6 @@ class EnvironmentController:
             properties = environment.get("properties", {})
 
             for property_name, property_config in properties.items():
-                property_value = self._aggregate_sensor_values(
-                    property_name, property_config.get("sensors", []), sensor_data
-                )
-
-                if property_value is None:
-                    self._log(
-                        f"No readings available for property '{property_name}'",
-                        level="WARNING",
-                        entity=environment_id,
-                    )
-                    continue
-
                 schedule = self._select_schedule(
                     property_name, property_config.get("schedules", [])
                 )
@@ -81,6 +69,40 @@ class EnvironmentController:
                 if not target_range:
                     self._log(
                         f"Schedule '{schedule.get('id')}' missing targets for '{property_name}'",
+                        level="WARNING",
+                        entity=environment_id,
+                    )
+                    continue
+
+                if isinstance(target_range, str):
+                    desired_state = target_range.strip().lower()
+                    if desired_state not in {"on", "off"}:
+                        self._log(
+                            (
+                                f"Unsupported target '{target_range}' for property "
+                                f"'{property_name}'"
+                            ),
+                            level="WARNING",
+                            entity=environment_id,
+                        )
+                        continue
+
+                    await self._apply_state_targets(
+                        environment_id=environment_id,
+                        property_name=property_name,
+                        desired_state=desired_state,
+                        controllers=property_config.get("controllers", []),
+                        devices=devices,
+                    )
+                    continue
+
+                property_value = self._aggregate_sensor_values(
+                    property_name, property_config.get("sensors", []), sensor_data
+                )
+
+                if property_value is None:
+                    self._log(
+                        f"No readings available for property '{property_name}'",
                         level="WARNING",
                         entity=environment_id,
                     )
@@ -175,6 +197,46 @@ class EnvironmentController:
         if maximum is not None and value > maximum:
             return "decrease"
         return "stable"
+
+    async def _apply_state_targets(
+        self,
+        *,
+        environment_id: str,
+        property_name: str,
+        desired_state: str,
+        controllers: Iterable[str],
+        devices: Mapping[str, object],
+    ) -> None:
+        command = "turn_on" if desired_state == "on" else "turn_off"
+        self._log(
+            f"Setting {property_name} to {desired_state} via {command}",
+            level="INFO",
+            entity=environment_id,
+        )
+
+        for device_id in controllers:
+            device_effects = self._device_effects(device_id)
+            if not device_effects:
+                self._log(
+                    f"No effects declared for device '{device_id}' controlling '{property_name}'",
+                    level="WARNING",
+                    entity=environment_id,
+                )
+                continue
+
+            for effect in device_effects:
+                if effect.get("property") != property_name:
+                    continue
+
+                await self._issue_command(
+                    device_id=device_id,
+                    devices=devices,
+                    command=command,
+                    environment_id=environment_id,
+                    property_name=property_name,
+                    property_value=desired_state,
+                    target_range={"state": desired_state},
+                )
 
     async def _apply_device_commands(
         self,

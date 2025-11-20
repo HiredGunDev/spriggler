@@ -368,6 +368,8 @@ Circuits define power sources for devices.
 
 Schedules define dynamic behavior for environments and devices, including operational time ranges and property-specific targets. Schedules now exclusively handle `targets`, centralizing control logic and avoiding redundancy with environment definitions.
 
+Illumination does not rely on a light sensor; the system assumes on/off commands issued to KASA-controlled outlets achieve the desired state.
+
 ### Schema
 
 - **defaults** (optional):
