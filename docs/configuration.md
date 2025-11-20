@@ -119,7 +119,7 @@ Environments now link directly to schedules for `targets`, removing redundancy a
     - `air` (object, optional): Overrides for `source` and `exhaust`.
     - `properties` (object, required): Defines the properties controlled in the environment.
         - Each property includes:
-            - `sensors` (array of strings): IDs of the sensors measuring the property.
+            - `sensors` (array of strings): IDs of the sensors measuring the property. May be empty for properties controlled without sensor feedback (e.g., scheduled lights).
             - `controllers` (array of strings): IDs of devices controlling the property.
             - `schedules` (array of strings): IDs of the schedules controlling the property.
 
