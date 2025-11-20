@@ -46,11 +46,14 @@ class GoveeH5100Humidity:
         advertisement_name = getattr(advertisement_data, "local_name", None)
 
         expected_signature = f"GVH5100_{self.identifier}" if self.identifier else None
+        matches_expected_signature = False
         if expected_signature:
-            if not any(
+            if any(
                 expected_signature.lower() in (value or "").lower()
                 for value in (advertisement_name, device_name)
             ):
+                matches_expected_signature = True
+            else:
                 self.logger.debug(
                     "Advertisement did not match expected signature; skipping",
                     expected_signature=expected_signature,
@@ -59,7 +62,7 @@ class GoveeH5100Humidity:
                 )
                 return
 
-        if self.normalized_identifier and device is not None:
+        if self.normalized_identifier and device is not None and not matches_expected_signature:
             normalized_address = self._normalize_identifier(device_address)
             normalized_name = self._normalize_identifier(device_name)
 
