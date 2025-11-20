@@ -1,5 +1,4 @@
 from .govee_utils import (
-    GOVEE_H5100_MANUFACTURER_ID,
     decode_h5100_manufacturer_data,
     ensure_shared_bleak_scanner_running,
     get_shared_bleak_scanner,
@@ -12,8 +11,6 @@ class GoveeH5100Temperature:
     """
     A class to interface with the Govee H5100 BLE temperature sensor via advertisements.
     """
-
-    BLE_MANUFACTURER_ID = GOVEE_H5100_MANUFACTURER_ID  # Hardcoded Manufacturer ID for Govee H5100
 
     def __init__(self, config: dict):
         self.config = dict(config)
@@ -44,23 +41,26 @@ class GoveeH5100Temperature:
             device_address=getattr(device, "address", None),
             device_name=getattr(device, "name", None),
             manufacturer_data_present=bool(advertisement_data.manufacturer_data),
+            advertisement_name=getattr(advertisement_data, "local_name", None),
         )
-
-        if not advertisement_data.manufacturer_data:
-            self.logger.debug("No manufacturer data present on advertisement; skipping")
-            return
-
-        manufacturer_data = advertisement_data.manufacturer_data.get(self.BLE_MANUFACTURER_ID)
-        if not manufacturer_data:
-            self.logger.debug(
-                "Manufacturer data missing for expected ID; skipping",
-                expected_manufacturer_id=self.BLE_MANUFACTURER_ID,
-                available_ids=list(advertisement_data.manufacturer_data.keys()),
-            )
-            return
 
         device_address = getattr(device, "address", None)
         device_name = getattr(device, "name", None)
+        advertisement_name = getattr(advertisement_data, "local_name", None)
+
+        expected_signature = f"GVH5100_{self.identifier}" if self.identifier else None
+        if expected_signature:
+            if not any(
+                expected_signature.lower() in (value or "").lower()
+                for value in (advertisement_name, device_name)
+            ):
+                self.logger.debug(
+                    "Advertisement did not match expected signature; skipping",
+                    expected_signature=expected_signature,
+                    advertisement_name=advertisement_name,
+                    device_name=device_name,
+                )
+                return
 
         if self.normalized_identifier and device is not None:
             normalized_address = self._normalize_identifier(device_address)
@@ -81,6 +81,21 @@ class GoveeH5100Temperature:
                     normalized_name=normalized_name,
                 )
                 return
+
+        manufacturer_data = None
+        if advertisement_data.manufacturer_data:
+            manufacturer_values = list(advertisement_data.manufacturer_data.values())
+            if manufacturer_values:
+                manufacturer_data = manufacturer_values[0]
+
+        if not manufacturer_data:
+            self.logger.debug(
+                "No manufacturer payload available; skipping",
+                available_ids=list(advertisement_data.manufacturer_data.keys())
+                if advertisement_data.manufacturer_data
+                else [],
+            )
+            return
 
         self.logger.debug(
             "Advertisement received",
