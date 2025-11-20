@@ -154,7 +154,9 @@ class Spriggler:
         self._sensor_metadata_by_id.clear()
         self._sensors_by_id.clear()
         for sensor, definition in zip(self.sensors, sensor_definitions):
-            sensor_id = definition.get("id") or getattr(sensor, "id", "unknown")
+            configured_id = definition.get("id")
+            hardware_id = getattr(sensor, "id", None)
+            configured_id = configured_id or hardware_id or "unknown"
             initialize_method = getattr(sensor, "initialize", None)
             if callable(initialize_method):
                 try:
@@ -173,17 +175,21 @@ class Spriggler:
             if callable(metadata_provider):
                 metadata = metadata_provider()
             else:
-                metadata = {"id": sensor_id}
+                metadata = {"id": configured_id}
 
-            metadata.setdefault("id", sensor_id)
+            # Preserve both configured and hardware identifiers
+            metadata = dict(metadata)
+            hardware_id = hardware_id or metadata.get("id")
+            metadata["id"] = configured_id
+            metadata.setdefault("hardware_id", hardware_id)
             metadata.setdefault("what", definition.get("what"))
             self._sensor_metadata[sensor] = metadata
-            self._sensor_metadata_by_id[sensor_id] = metadata
-            self._sensors_by_id[sensor_id] = sensor
+            self._sensor_metadata_by_id[configured_id] = metadata
+            self._sensors_by_id[configured_id] = sensor
             self.log(
                 f"Sensor initialized: {json.dumps(metadata, sort_keys=True)}",
                 component_type="sensor",
-                entity_name=sensor_id,
+                entity_name=configured_id,
             )
 
     def initialize_controller(self):
@@ -276,9 +282,11 @@ class Spriggler:
                 if isawaitable(result):
                     result = await result
             except Exception as exc:  # pragma: no cover - log unexpected sensor errors
-                sensor_id = getattr(sensor, "id", "unknown")
+                sensor_metadata = self._sensor_metadata.get(sensor, {})
+                sensor_id = sensor_metadata.get("id") or getattr(sensor, "id", "unknown")
+                hardware_id = sensor_metadata.get("hardware_id") or getattr(sensor, "id", "unknown")
                 self.log(
-                    f"Sensor read failure: {exc}",
+                    f"Sensor read failure: {exc} (config_id={sensor_id}, hardware_id={hardware_id})",
                     level="ERROR",
                     component_type="sensor",
                     entity_name=sensor_id,
@@ -290,9 +298,10 @@ class Spriggler:
 
             sensor_metadata = self._sensor_metadata.get(sensor, {})
             sensor_id = sensor_metadata.get("id") or getattr(sensor, "id", "unknown")
+            hardware_id = sensor_metadata.get("hardware_id") or getattr(sensor, "id", "unknown")
             readings[sensor_id] = result
             self.log(
-                f"Sensor data: {result}",
+                f"Sensor data: {result} (config_id={sensor_id}, hardware_id={hardware_id})",
                 component_type="sensor",
                 entity_name=sensor_id,
             )
