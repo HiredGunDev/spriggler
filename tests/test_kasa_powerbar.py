@@ -50,15 +50,24 @@ class DummyStrip:
         self.port = port
         self.children = outlets or []
         self.updated = False
+        self.update_calls = 0
 
     async def update(self):
         await asyncio.sleep(0)
         self.updated = True
+        self.update_calls += 1
 
 
 class DummyDiscoveredDevice:
     def __init__(self, alias):
         self.alias = alias
+
+
+@pytest.fixture(autouse=True)
+def reset_kasa_cache():
+    kasa_module.KasaPowerbar._strip_cache.clear()
+    yield
+    kasa_module.KasaPowerbar._strip_cache.clear()
 
 
 def test_initialize_with_discovery(monkeypatch):
@@ -159,6 +168,48 @@ def test_missing_outlet_raises(monkeypatch):
         asyncio.run(device.initialize())
 
     assert "Available outlets" in str(exc.value)
+
+
+def test_reuses_cached_strip(monkeypatch):
+    heater_outlet = DummyOutlet("Heater")
+    light_outlet = DummyOutlet("Lights")
+
+    created_instances = []
+
+    def mock_smart_strip(host):
+        strip = DummyStrip(host=host, outlets=[heater_outlet, light_outlet])
+        created_instances.append(strip)
+        return strip
+
+    async def mock_discover():
+        await asyncio.sleep(0)
+        return {"192.168.1.55": DummyDiscoveredDevice("Seedling Strip")}
+
+    monkeypatch.setattr(kasa_module, "SmartStrip", mock_smart_strip)
+    monkeypatch.setattr(kasa_module.Discover, "discover", mock_discover)
+
+    heater_device = kasa_module.KasaPowerbar(
+        {
+            "id": "heater_seedling",
+            "what": "heater",
+            "control": {"name": "Seedling Strip", "outlet_name": "Heater"},
+        }
+    )
+    light_device = kasa_module.KasaPowerbar(
+        {
+            "id": "light_seedling",
+            "what": "light",
+            "control": {"name": "Seedling Strip", "outlet_name": "Lights"},
+        }
+    )
+
+    asyncio.run(heater_device.initialize())
+    asyncio.run(light_device.initialize())
+
+    assert len(created_instances) == 1
+    assert created_instances[0].update_calls == 1
+    assert heater_device.address == light_device.address == "192.168.1.55"
+    assert heater_device._strip is light_device._strip  # noqa: SLF001 - intentional cache check
 
 
 @pytest.mark.parametrize(

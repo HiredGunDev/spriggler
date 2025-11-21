@@ -37,6 +37,9 @@ def get_metadata() -> Dict[str, Any]:
 class KasaPowerbar:
     """Interface to manage TP-Link KASA smart power strips."""
 
+    # Cache of SmartStrip instances keyed by IP address (or discovered name).
+    _strip_cache: Dict[str, SmartStrip] = {}
+
     def __init__(self, config: Dict[str, Any]):
         self.id = config.get("id", "kasa_powerbar")
         self.what = config.get("what", "power_device")
@@ -67,6 +70,11 @@ class KasaPowerbar:
         self._outlet = None
         self.address: Optional[str] = None
         self._initialized = False
+
+    def _cache_key(self) -> str:
+        """Return a stable cache key for this power strip."""
+
+        return self.ip_address or f"name::{self.device_name}"
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -113,20 +121,37 @@ class KasaPowerbar:
         if self.device_name and not self.ip_address:
             self.ip_address = await self._discover_host()
 
-        logger.bind(component="device", device_id=self.id).info(
-            "Connecting to KASA power strip at %s (outlet '%s')",
-            self.ip_address,
-            self.outlet_name,
-        )
+        cache_key = self._cache_key()
+        cached_strip = self._strip_cache.get(cache_key)
 
-        strip = SmartStrip(self.ip_address)
+        if cached_strip:
+            logger.bind(component="device", device_id=self.id).info(
+                "Reusing existing connection to KASA power strip at %s (outlet '%s')",
+                self.ip_address,
+                self.outlet_name,
+            )
 
-        if hasattr(strip, "protocol") and hasattr(strip.protocol, "port"):
-            strip.protocol.port = self.port
+            if hasattr(cached_strip, "protocol") and hasattr(cached_strip.protocol, "port"):
+                cached_strip.protocol.port = self.port
 
-        await strip.update()
-        self._strip = strip
-        self.address = strip.host
+            self._strip = cached_strip
+            self.address = getattr(cached_strip, "host", self.ip_address)
+        else:
+            logger.bind(component="device", device_id=self.id).info(
+                "Connecting to KASA power strip at %s (outlet '%s')",
+                self.ip_address,
+                self.outlet_name,
+            )
+
+            strip = SmartStrip(self.ip_address)
+
+            if hasattr(strip, "protocol") and hasattr(strip.protocol, "port"):
+                strip.protocol.port = self.port
+
+            await strip.update()
+            self._strip_cache[cache_key] = strip
+            self._strip = strip
+            self.address = strip.host
 
         self._select_outlet()
         self._initialized = True
