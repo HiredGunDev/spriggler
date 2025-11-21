@@ -70,14 +70,26 @@ class VesyncHumidifier:
         assert self._manager is not None  # noqa: S101 - defensive assertion
         self._manager.update()
 
+        # pyvesync 2.x exposes humidifiers as `manager.humidifiers`, but some
+        # distributions ship a build that only provides the `devices` mapping.
+        # Support both to prevent AttributeError during initialization.
+        humidifiers = getattr(self._manager, "humidifiers", None)
+        if humidifiers is None:
+            devices = getattr(self._manager, "devices", {})
+            if isinstance(devices, dict):
+                humidifiers = devices.get("humidifier") or devices.get("humidifiers")
+
+        if not humidifiers:
+            raise RuntimeError("Connected VeSync account does not report any humidifiers")
+
         matches = [
             device
-            for device in self._manager.humidifiers
+            for device in humidifiers
             if getattr(device, "device_name", "").lower() == self.device_name.lower()
         ]
 
         if not matches:
-            available = [getattr(device, "device_name", "") for device in self._manager.humidifiers]
+            available = [getattr(device, "device_name", "") for device in humidifiers]
             raise ValueError(
                 f"Humidifier '{self.device_name}' was not found. Available devices: {available}"
             )
