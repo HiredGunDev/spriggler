@@ -200,11 +200,15 @@ class Spriggler:
         runtime_settings = self.config.get("runtime", {})
         dry_run = bool(runtime_settings.get("dry_run", False))
         debounce_seconds = float(runtime_settings.get("debounce_seconds", 5.0))
+        state_refresh_seconds = float(
+            runtime_settings.get("state_refresh_seconds", 60.0)
+        )
 
         self.environment_controller = EnvironmentController(
             config=self.config,
             log_callback=self.log,
             debounce_seconds=debounce_seconds,
+            state_refresh_seconds=state_refresh_seconds,
             dry_run=dry_run,
         )
     async def shutdown(self):
