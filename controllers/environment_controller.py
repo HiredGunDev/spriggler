@@ -19,6 +19,7 @@ class EnvironmentController:
         config: Mapping,
         log_callback=None,
         debounce_seconds: float = 5.0,
+        state_refresh_seconds: float = 60.0,
         dry_run: bool = False,
     ) -> None:
         self.environments = config.get("environments", {}).get("definitions", [])
@@ -34,9 +35,10 @@ class EnvironmentController:
             config.get("devices", {}).get("defaults", {}).get("effects", {})
         )
         self.debounce_seconds = debounce_seconds
+        self.state_refresh_seconds = state_refresh_seconds
         self.dry_run = dry_run
         self._log_callback = log_callback
-        self._last_commands: Dict[str, tuple[str, float]] = {}
+        self._last_commands: Dict[tuple[str, str], tuple[str, float]] = {}
         self._last_property_logs: Dict[tuple[str, str], tuple[float, str, object, object]] = {}
 
     # ------------------------------------------------------------------
@@ -316,14 +318,30 @@ class EnvironmentController:
         target_range: Mapping[str, object],
     ) -> None:
         now = time.monotonic()
-        last_action, last_time = self._last_commands.get(device_id, (None, 0))
-        if last_action == command and now - last_time < self.debounce_seconds:
-            self._log(
-                f"Skipping {command} for '{device_id}' due to debounce window ({self.debounce_seconds}s)",
-                level="DEBUG",
-                entity=environment_id,
-            )
-            return
+        history_key = (device_id, property_name)
+        last_action, last_time = self._last_commands.get(history_key, (None, 0))
+        if last_action == command:
+            if now - last_time < self.debounce_seconds:
+                self._log(
+                    (
+                        f"Skipping {command} for '{device_id}' controlling '{property_name}' "
+                        f"due to debounce window ({self.debounce_seconds}s)"
+                    ),
+                    level="DEBUG",
+                    entity=environment_id,
+                )
+                return
+
+            if now - last_time < self.state_refresh_seconds:
+                self._log(
+                    (
+                        f"No state change for '{device_id}' controlling '{property_name}'; "
+                        f"last {command} sent {now - last_time:.1f}s ago"
+                    ),
+                    level="DEBUG",
+                    entity=environment_id,
+                )
+                return
 
         device = devices.get(device_id)
         if not device:
@@ -350,7 +368,7 @@ class EnvironmentController:
 
         if self.dry_run:
             self._log(f"[dry-run] Would {summary}", level="INFO", entity=environment_id)
-            self._last_commands[device_id] = (command, now)
+            self._last_commands[history_key] = (command, now)
             return
 
         try:
@@ -359,7 +377,7 @@ class EnvironmentController:
                 await result
 
             self._log(summary, level="INFO", entity=environment_id)
-            self._last_commands[device_id] = (command, now)
+            self._last_commands[history_key] = (command, now)
         except Exception as exc:  # pragma: no cover - defensive logging
             self._log(
                 f"Failed to execute {command} on '{device_id}': {exc}",
