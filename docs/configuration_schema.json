@@ -193,7 +193,10 @@
                   "name": { "type": "string" },
                   "outlet_name": { "type": "string" },
                   "ip_address": { "type": "string" },
-                  "port": { "type": "integer", "minimum": 0 }
+                  "port": { "type": "integer", "minimum": 0 },
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string" },
+                  "time_zone": { "type": "string" }
                 },
                 "additionalProperties": false
               },
