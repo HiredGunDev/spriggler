@@ -331,6 +331,19 @@ The `KASA_Powerbar` device driver controls individual outlets on TP-Link KASA sm
 }
 ```
 
+### VeSync Humidifier (`vesync_humidifier`)
+
+The `vesync_humidifier` driver controls VeSync-compatible humidifiers (such as Levoit models) using the [`pyvesync`](https://github.com/markperdue/pyvesync) library.
+
+- **Dependencies**: Install `pyvesync` with `pip install pyvesync`.
+- **Required fields**:
+    - `control.name`: The humidifier name exactly as it appears in the VeSync app.
+    - `control.email` / `control.password`: VeSync account credentials used to authenticate and locate the device.
+- **Optional fields**:
+    - `control.time_zone`: IANA time zone identifier (e.g., `America/New_York`) used for the VeSync session.
+    - `power.circuit` / `power.rating`: Metadata only; used for logging/diagnostics.
+- **Notes**: Ensure the VeSync account has access to the humidifier and that two-factor authentication (if enabled) allows API access.
+
 ---
 
 ## Circuits

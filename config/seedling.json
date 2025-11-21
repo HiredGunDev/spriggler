@@ -139,14 +139,16 @@
       {
         "id": "humidifier_seedling",
         "what": "humidifier",
-        "how": "KASA_Powerbar",
+        "how": "vesync_humidifier",
         "power": {
           "circuit": "seedling_circuit",
           "rating": 500
         },
         "control": {
-          "name": "seedling",
-          "outlet_name": "Humidifier"
+          "name": "Seedling Humidifier",
+          "email": "growseedling@example.com",
+          "password": "CHANGE_ME",
+          "time_zone": "America/New_York"
         }
       },
       {
