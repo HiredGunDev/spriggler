@@ -126,9 +126,8 @@ class KasaPowerbar:
 
         if cached_strip:
             logger.bind(component="device", device_id=self.id).info(
-                "Reusing existing connection to KASA power strip at %s (outlet '%s')",
-                self.ip_address,
-                self.outlet_name,
+                f"Reusing existing connection to KASA power strip at {self.ip_address} "
+                f"(outlet '{self.outlet_name}')"
             )
 
             if hasattr(cached_strip, "protocol") and hasattr(cached_strip.protocol, "port"):
@@ -138,9 +137,8 @@ class KasaPowerbar:
             self.address = getattr(cached_strip, "host", self.ip_address)
         else:
             logger.bind(component="device", device_id=self.id).info(
-                "Connecting to KASA power strip at %s (outlet '%s')",
-                self.ip_address,
-                self.outlet_name,
+                f"Connecting to KASA power strip at {self.ip_address} "
+                f"(outlet '{self.outlet_name}')"
             )
 
             strip = SmartStrip(self.ip_address)
@@ -157,8 +155,7 @@ class KasaPowerbar:
         self._initialized = True
 
         logger.bind(component="device", device_id=self.id).info(
-            "KASA outlet '%s' is ready for commands.",
-            self.outlet_name,
+            f"KASA outlet '{self.outlet_name}' is ready for commands."
         )
 
     def get_metadata(self) -> Dict[str, Any]:

@@ -173,8 +173,7 @@ class VesyncHumidifier:
         self._initialized = True
 
         logger.bind(component="device", device_id=self.id).info(
-            "VeSync humidifier '%s' is ready for commands.",
-            self.device_name,
+            f"VeSync humidifier '{self.device_name}' is ready for commands."
         )
 
     def get_metadata(self) -> Dict[str, Any]:
