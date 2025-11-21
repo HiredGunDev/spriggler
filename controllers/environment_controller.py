@@ -219,13 +219,28 @@ class EnvironmentController:
         devices: Mapping[str, object],
     ) -> None:
         command = "turn_on" if desired_state == "on" else "turn_off"
-        self._log(
-            f"Setting {property_name} to {desired_state} via {command}",
-            level="INFO",
-            entity=environment_id,
-        )
-
         for device_id in controllers:
+            history_key = (device_id, property_name)
+            last_action, last_time = self._last_commands.get(history_key, (None, 0))
+            now = time.monotonic()
+
+            if last_action == command and now - last_time < self.state_refresh_seconds:
+                self._log(
+                    (
+                        f"No state change for '{device_id}' controlling '{property_name}'; "
+                        f"last {command} sent {now - last_time:.1f}s ago"
+                    ),
+                    level="DEBUG",
+                    entity=environment_id,
+                )
+                continue
+
+            self._log(
+                f"Setting {property_name} to {desired_state} via {command}",
+                level="INFO",
+                entity=environment_id,
+            )
+
             device_effects = self._device_effects(device_id)
             if not device_effects:
                 self._log(
