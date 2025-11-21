@@ -5,6 +5,7 @@ from loaders.device_loader import load_devices
 from loaders.sensor_loader import load_sensors
 
 import asyncio
+import copy
 import json
 import os
 import sys
@@ -22,6 +23,7 @@ class Spriggler:
         self._sensor_metadata_by_id = {}
         self._sensors_by_id = {}
         self._devices_by_id = {}
+        self._last_sensor_data = {}
         self.loop_interval = 1.0
         self.heartbeat_interval = 5.0
         self.environment_controller = None
@@ -300,11 +302,15 @@ class Spriggler:
             sensor_id = sensor_metadata.get("id") or getattr(sensor, "id", "unknown")
             hardware_id = sensor_metadata.get("hardware_id") or getattr(sensor, "id", "unknown")
             readings[sensor_id] = result
-            self.log(
-                f"Sensor data: {result} (config_id={sensor_id}, hardware_id={hardware_id})",
-                component_type="sensor",
-                entity_name=sensor_id,
-            )
+
+            previous_result = self._last_sensor_data.get(sensor_id)
+            if result != previous_result:
+                self.log(
+                    f"Sensor data: {result} (config_id={sensor_id}, hardware_id={hardware_id})",
+                    component_type="sensor",
+                    entity_name=sensor_id,
+                )
+                self._last_sensor_data[sensor_id] = copy.deepcopy(result)
 
         return readings
 
