@@ -37,6 +37,7 @@ class EnvironmentController:
         self.dry_run = dry_run
         self._log_callback = log_callback
         self._last_commands: Dict[str, tuple[str, float]] = {}
+        self._last_property_logs: Dict[tuple[str, str], tuple[float, str, object, object]] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -109,14 +110,22 @@ class EnvironmentController:
                     continue
 
                 decision = self._decision(property_value, target_range)
-                self._log(
-                    (
-                        f"{property_name} is {property_value}; "
-                        f"target min={target_range.get('min')} max={target_range.get('max')} -> {decision}"
-                    ),
-                    level="INFO",
-                    entity=environment_id,
-                )
+
+                if self._should_log_property_status(
+                    environment_id=environment_id,
+                    property_name=property_name,
+                    property_value=property_value,
+                    target_range=target_range,
+                    decision=decision,
+                ):
+                    self._log(
+                        (
+                            f"{property_name} is {property_value}; "
+                            f"target min={target_range.get('min')} max={target_range.get('max')} -> {decision}"
+                        ),
+                        level="INFO",
+                        entity=environment_id,
+                    )
 
                 await self._apply_device_commands(
                     environment_id=environment_id,
@@ -370,6 +379,32 @@ class EnvironmentController:
             return list(default_effects)
 
         return []
+
+    def _should_log_property_status(
+        self,
+        *,
+        environment_id: str,
+        property_name: str,
+        property_value: float,
+        target_range: Mapping[str, object],
+        decision: str,
+    ) -> bool:
+        """Only log property status when the value or decision changes."""
+
+        status_key = (environment_id, property_name)
+        rounded_value = round(property_value, 2)
+        status = (
+            rounded_value,
+            decision,
+            target_range.get("min"),
+            target_range.get("max"),
+        )
+
+        if self._last_property_logs.get(status_key) == status:
+            return False
+
+        self._last_property_logs[status_key] = status
+        return True
 
     def _log(self, message: str, *, level: str = "INFO", entity: str = "controller") -> None:
         if self._log_callback:
