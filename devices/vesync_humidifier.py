@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
+
+from itertools import chain
 
 from loguru import logger
 from pyvesync import VeSync
@@ -66,18 +68,78 @@ class VesyncHumidifier:
         if not self._initialized or self._device is None:
             raise RuntimeError("VesyncHumidifier has not been initialized")
 
+    def _flatten_devices(self, dev_iterables: Iterable[Iterable[object]]) -> list[object]:
+        """Return a flattened, deduplicated list of devices from iterables."""
+
+        seen = set()
+        devices: list[object] = []
+
+        for device in chain.from_iterable(dev_iterables):
+            identifier = (getattr(device, "uuid", None), getattr(device, "cid", None))
+            if identifier in seen:
+                continue
+
+            seen.add(identifier)
+            devices.append(device)
+
+        return devices
+
+    def _candidate_devices(self) -> list[object]:
+        """Return all devices reported by VeSync that could be humidifiers."""
+
+        assert self._manager is not None  # noqa: S101 - defensive assertion
+
+        # Standard humidifier lists exposed by pyvesync
+        humidifiers = getattr(self._manager, "humidifiers", None)
+        devices_mapping = getattr(self._manager, "devices", {})
+
+        devices_from_mapping = []
+        if isinstance(devices_mapping, dict):
+            devices_from_mapping.extend(
+                devices_mapping.get("humidifier") or devices_mapping.get("humidifiers") or []
+            )
+
+        # Some builds categorize devices differently (e.g., fans); search all
+        # known device collections for entries that smell like humidifiers.
+        additional_lists = []
+        for attr in (
+            "fans",
+            "outlets",
+            "switches",
+            "bulbs",
+            "scales",
+            "motionsensors",
+        ):
+            devs = getattr(self._manager, attr, None)
+            if devs:
+                additional_lists.append(devs)
+
+        extra_from_dev_list = []
+        dev_list = getattr(self._manager, "_dev_list", {})
+        if isinstance(dev_list, dict):
+            extra_from_dev_list.extend(dev_list.values())
+
+        candidates = self._flatten_devices(
+            [humidifiers or [], devices_from_mapping, *additional_lists, *extra_from_dev_list]
+        )
+
+        if not candidates:
+            return []
+
+        def looks_like_humidifier(device: object) -> bool:
+            name = getattr(device, "device_name", "").lower()
+            device_type = getattr(device, "device_type", "").lower()
+            category = getattr(device, "device_category", "").lower()
+            return "humid" in name or "humid" in device_type or "humid" in category
+
+        humidifier_candidates = [d for d in candidates if looks_like_humidifier(d)]
+        return humidifier_candidates or candidates
+
     def _select_device(self) -> None:
         assert self._manager is not None  # noqa: S101 - defensive assertion
         self._manager.update()
 
-        # pyvesync 2.x exposes humidifiers as `manager.humidifiers`, but some
-        # distributions ship a build that only provides the `devices` mapping.
-        # Support both to prevent AttributeError during initialization.
-        humidifiers = getattr(self._manager, "humidifiers", None)
-        if humidifiers is None:
-            devices = getattr(self._manager, "devices", {})
-            if isinstance(devices, dict):
-                humidifiers = devices.get("humidifier") or devices.get("humidifiers")
+        humidifiers = self._candidate_devices()
 
         if not humidifiers:
             raise RuntimeError("Connected VeSync account does not report any humidifiers")
