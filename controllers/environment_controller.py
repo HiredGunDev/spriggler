@@ -396,14 +396,6 @@ class EnvironmentController:
             )
 
             if current_state is not None and current_state == desired_state:
-                self._log(
-                    (
-                        f"Skipping {command} for '{device_id}' controlling '{property_name}'; "
-                        f"device already {'on' if desired_state else 'off'}"
-                    ),
-                    level="INFO",
-                    entity=environment_id,
-                )
                 self._last_commands[history_key] = (command, now)
                 return False
 
