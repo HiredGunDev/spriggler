@@ -186,6 +186,13 @@ class KasaPowerbar:
         assert self._strip is not None  # noqa: S101 - defensive assertion
         return [getattr(child, "alias", "") for child in getattr(self._strip, "children", [])]
 
+    async def is_on(self) -> bool:
+        """Return True when the configured outlet is powered on."""
+
+        self._ensure_initialized()
+        await self._outlet.update()
+        return bool(getattr(self._outlet, "is_on", False))
+
     async def turn_on(self) -> None:
         """Turn on the configured outlet."""
 
