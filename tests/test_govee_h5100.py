@@ -17,13 +17,13 @@ class DummyLogger:
         return self
 
     def info(self, message, *args, **kwargs):
-        self.messages.append(("info", message))
+        self.messages.append(("info", message, kwargs))
 
     def warning(self, message, *args, **kwargs):
-        self.messages.append(("warning", message))
+        self.messages.append(("warning", message, kwargs))
 
     def debug(self, message, *args, **kwargs):
-        self.messages.append(("debug", message))
+        self.messages.append(("debug", message, kwargs))
 
 
 def _reset_shared_scanner_state():
@@ -187,3 +187,55 @@ def test_shared_scanner_falls_back_when_filter_unsupported(monkeypatch):
 
     assert scanner.scanning_filter is None
     assert scanner.detection_callback is govee_utils._dispatch_detection
+
+
+def test_temperature_logging_only_on_change():
+    first_payload = bytes([0x01, 0x02, 0x03, 0x94, 0x47, 0x00, 0x55])
+    next_payload = bytes([0x01, 0x02, 0x03, 0x94, 0x48, 0x00, 0x55])
+
+    sensor = GoveeH5100Temperature({"id": "temp-logs"})
+    sensor.logger = DummyLogger()
+
+    advertisement = SimpleNamespace(
+        manufacturer_data={sensor.BLE_MANUFACTURER_ID: first_payload}
+    )
+    sensor.handle_advertisement(device=None, advertisement_data=advertisement)
+    sensor.handle_advertisement(device=None, advertisement_data=advertisement)
+
+    advertisement_next = SimpleNamespace(
+        manufacturer_data={sensor.BLE_MANUFACTURER_ID: next_payload}
+    )
+    sensor.handle_advertisement(device=None, advertisement_data=advertisement_next)
+
+    info_messages = [message for level, message, _ in sensor.logger.messages if level == "info"]
+
+    assert len(info_messages) == 2
+    assert "suppressed 0" in info_messages[0]
+    assert "suppressed 1" in info_messages[1]
+    assert sensor.current_humidity == pytest.approx(56.8)
+
+
+def test_humidity_logging_only_on_change():
+    first_payload = bytes([0x01, 0x02, 0x03, 0x94, 0x47, 0x00])
+    next_payload = bytes([0x01, 0x02, 0x03, 0x94, 0x48, 0x00])
+
+    sensor = GoveeH5100Humidity({"id": "humidity-logs"})
+    sensor.logger = DummyLogger()
+
+    advertisement = SimpleNamespace(
+        manufacturer_data={sensor.BLE_MANUFACTURER_ID: first_payload}
+    )
+    sensor.handle_advertisement(device=None, advertisement_data=advertisement)
+    sensor.handle_advertisement(device=None, advertisement_data=advertisement)
+
+    advertisement_next = SimpleNamespace(
+        manufacturer_data={sensor.BLE_MANUFACTURER_ID: next_payload}
+    )
+    sensor.handle_advertisement(device=None, advertisement_data=advertisement_next)
+
+    info_messages = [message for level, message, _ in sensor.logger.messages if level == "info"]
+
+    assert len(info_messages) == 2
+    assert "suppressed 0" in info_messages[0]
+    assert "suppressed 1" in info_messages[1]
+    assert sensor.current_humidity == pytest.approx(56.8)
