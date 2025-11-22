@@ -24,6 +24,7 @@ class GoveeH5100Humidity:
         self.last_emitted_humidity = None
         self.last_emitted_battery = None
         self.suppressed_identical_advertisements = 0
+        self.has_logged_no_data = False
         self.logger = None
         self.scanner = None
 
@@ -104,6 +105,9 @@ class GoveeH5100Humidity:
             self.battery_level = data["battery"]
             has_previous_reading = self.last_emitted_humidity is not None
 
+            # Reset no-data guard once the first valid reading is received.
+            self.has_logged_no_data = False
+
             if has_previous_reading and (
                 self.current_humidity == self.last_emitted_humidity
                 and self.battery_level == self.last_emitted_battery
@@ -150,7 +154,9 @@ class GoveeH5100Humidity:
     async def read(self):
         """Retrieve the most recent humidity value."""
         if self.current_humidity is None:
-            self.logger.warning("No sensor data available yet.")
+            if not self.has_logged_no_data:
+                self.logger.warning("No sensor data available yet.")
+                self.has_logged_no_data = True
             return {"error": "No sensor data available"}
         self.logger.debug(
             "Returning latest sensor readings",

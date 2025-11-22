@@ -28,6 +28,7 @@ class GoveeH5100Temperature:
         self.last_emitted_humidity = None
         self.last_emitted_battery = None
         self.suppressed_identical_advertisements = 0
+        self.has_logged_no_data = False
         self.logger = None
         self.scanner = None
 
@@ -108,6 +109,9 @@ class GoveeH5100Temperature:
             self.current_humidity = data["humidity"]
             self.battery_level = data["battery"]
 
+            # Reset no-data guard once the first valid reading is received.
+            self.has_logged_no_data = False
+
             has_previous_reading = (
                 self.last_emitted_temperature is not None
                 and self.last_emitted_humidity is not None
@@ -162,7 +166,9 @@ class GoveeH5100Temperature:
     async def read(self):
         """Retrieve the most recent temperature and humidity values."""
         if self.current_temperature is None or self.current_humidity is None:
-            self.logger.warning("No sensor data available yet.")
+            if not self.has_logged_no_data:
+                self.logger.warning("No sensor data available yet.")
+                self.has_logged_no_data = True
             return {"error": "No sensor data available"}
         self.logger.debug(
             "Returning latest sensor readings",
