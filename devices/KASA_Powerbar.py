@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -29,6 +29,10 @@ def get_metadata() -> Dict[str, Any]:
                 "outlet_name": "Outlet alias to control on the power strip.",
                 "ip_address": "Static IP address used when discovery by name is not available.",
                 "port": f"Optional TCP port (default {DEFAULT_KASA_PORT}).",
+                "safety": {
+                    "target_state": "Desired fallback state ('on' or 'off').",
+                    "timeout_minutes": "Delay in minutes before applying the fallback state.",
+                },
             }
         },
     }
@@ -65,6 +69,13 @@ class KasaPowerbar:
         power = config.get("power", {})
         self.power_rating = power.get("rating")
         self.circuit = power.get("circuit")
+
+        safety_config = control.get("safety", {}) if isinstance(control, dict) else {}
+        self._safety_target_state: Optional[str] = safety_config.get("target_state")
+        timeout_minutes = safety_config.get("timeout_minutes")
+        self._safety_timeout_minutes: Optional[float] = (
+            float(timeout_minutes) if timeout_minutes is not None else None
+        )
 
         self._strip: Optional[SmartStrip] = None
         self._outlet = None
@@ -198,6 +209,7 @@ class KasaPowerbar:
 
         self._ensure_initialized()
         await self._outlet.turn_on()
+        await self._apply_safety_programming(command_state=True)
         logger.debug("Issued ON command to %s", self.outlet_name)
 
     async def turn_off(self) -> None:
@@ -205,5 +217,118 @@ class KasaPowerbar:
 
         self._ensure_initialized()
         await self._outlet.turn_off()
+        await self._apply_safety_programming(command_state=False)
         logger.debug("Issued OFF command to %s", self.outlet_name)
+
+    # ------------------------------------------------------------------
+    # Safety handling
+    # ------------------------------------------------------------------
+    def _safety_settings(self) -> Tuple[Optional[bool], Optional[int]]:
+        """Return parsed safety target and timeout in seconds."""
+
+        if not self._safety_target_state:
+            return None, None
+
+        normalized = str(self._safety_target_state).lower()
+        if normalized not in {"on", "off"}:
+            logger.warning(
+                "Invalid safety target_state '%s' - expected 'on' or 'off'", self._safety_target_state
+            )
+            return None, None
+
+        if self._safety_timeout_minutes is None:
+            logger.warning(
+                "Safety target configured without a timeout for outlet '%s'", self.outlet_name
+            )
+            return None, None
+
+        if self._safety_timeout_minutes <= 0:
+            return None, None
+
+        return normalized == "on", int(self._safety_timeout_minutes * 60)
+
+    async def _apply_safety_programming(self, command_state: bool) -> None:
+        """Program or clear safety timers based on configuration and hardware support."""
+
+        target_state, timeout_seconds = self._safety_settings()
+
+        if target_state is None or timeout_seconds is None:
+            await self._clear_safety_programming()
+            return
+
+        if command_state == target_state:
+            # Requested state matches the safety fallback; nothing to enforce.
+            await self._clear_safety_programming()
+            return
+
+        if hasattr(self._outlet, "set_timer"):
+            try:
+                await self._outlet.set_timer(timeout_seconds, target_state)
+                logger.debug(
+                    "Programmed safety timer to switch %s in %s seconds",
+                    "on" if target_state else "off",
+                    timeout_seconds,
+                )
+            except Exception as exc:  # pragma: no cover - dependent on hardware support
+                logger.warning(
+                    "Failed to program safety timer for outlet '%s': %s",
+                    self.outlet_name,
+                    exc,
+                )
+        elif hasattr(self._outlet, "add_schedule_rule"):
+            try:
+                await self._outlet.add_schedule_rule(
+                    {
+                        "enable": True,
+                        "start": timeout_seconds,
+                        "power_state": target_state,
+                        "type": "once",
+                    }
+                )
+                logger.debug(
+                    "Programmed safety schedule to switch %s in %s seconds",
+                    "on" if target_state else "off",
+                    timeout_seconds,
+                )
+            except Exception as exc:  # pragma: no cover - dependent on hardware support
+                logger.warning(
+                    "Failed to program safety schedule for outlet '%s': %s",
+                    self.outlet_name,
+                    exc,
+                )
+        else:  # pragma: no cover - depends on kasa implementation
+            logger.warning(
+                "KASA outlet '%s' does not expose timer or schedule controls; cannot enforce safety",
+                self.outlet_name,
+            )
+
+    async def _clear_safety_programming(self) -> None:
+        """Attempt to clear any previously programmed safety timers or schedules."""
+
+        cleared = False
+
+        if hasattr(self._outlet, "delete_timer"):
+            try:
+                await self._outlet.delete_timer()
+                cleared = True
+            except Exception as exc:  # pragma: no cover - dependent on hardware support
+                logger.warning(
+                    "Failed to clear safety timer for outlet '%s': %s",
+                    self.outlet_name,
+                    exc,
+                )
+
+        if hasattr(self._outlet, "delete_schedule_rules"):
+            try:
+                await self._outlet.delete_schedule_rules()
+                cleared = True
+            except Exception as exc:  # pragma: no cover - dependent on hardware support
+                logger.warning(
+                    "Failed to clear safety schedule for outlet '%s': %s",
+                    self.outlet_name,
+                    exc,
+                )
+
+        if cleared:
+            logger.debug("Cleared safety programming for outlet '%s'", self.outlet_name)
 
