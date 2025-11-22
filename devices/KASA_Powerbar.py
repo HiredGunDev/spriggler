@@ -32,7 +32,10 @@ def get_metadata() -> Dict[str, Any]:
                 "safety": {
                     "target_state": "Desired fallback state ('on' or 'off').",
                     "timeout_minutes": "Delay in minutes before applying the fallback state.",
+                    "enforce": "If false, safety logic is disabled for the outlet.",
+                    "outlets": "Optional mapping of outlet names to safety configs; overrides defaults.",
                 },
+                "outlets": "Optional per-outlet blocks that can each declare their own safety rules.",
             }
         },
     }
@@ -70,12 +73,13 @@ class KasaPowerbar:
         self.power_rating = power.get("rating")
         self.circuit = power.get("circuit")
 
-        safety_config = control.get("safety", {}) if isinstance(control, dict) else {}
+        safety_config = self._resolve_safety_config(control)
         self._safety_target_state: Optional[str] = safety_config.get("target_state")
         timeout_minutes = safety_config.get("timeout_minutes")
         self._safety_timeout_minutes: Optional[float] = (
             float(timeout_minutes) if timeout_minutes is not None else None
         )
+        self._safety_enforce: bool = bool(safety_config.get("enforce", True))
 
         self._strip: Optional[SmartStrip] = None
         self._outlet = None
@@ -178,6 +182,12 @@ class KasaPowerbar:
             "outlet": self.outlet_name,
             "circuit": self.circuit,
             "power_rating": self.power_rating,
+            "safety": {
+                "scope": "outlet",
+                "target_state": self._safety_target_state,
+                "timeout_minutes": self._safety_timeout_minutes,
+                "enforce": self._safety_enforce,
+            },
         }
 
         if self._strip is not None:
@@ -223,36 +233,101 @@ class KasaPowerbar:
     # ------------------------------------------------------------------
     # Safety handling
     # ------------------------------------------------------------------
-    def _safety_settings(self) -> Tuple[Optional[bool], Optional[int]]:
-        """Return parsed safety target and timeout in seconds."""
+    def _resolve_safety_config(self, control: Dict[str, Any]) -> Dict[str, Any]:
+        """Return outlet-specific safety configuration if present."""
+
+        if not isinstance(control, dict):
+            return {}
+
+        outlet_specific = self._extract_outlet_config(control)
+        if isinstance(outlet_specific, dict):
+            safety = outlet_specific.get("safety")
+            if isinstance(safety, dict):
+                return safety
+
+        control_safety = control.get("safety")
+        if isinstance(control_safety, dict):
+            outlets_block = control_safety.get("outlets")
+            outlet_override = self._match_outlet_from_block(outlets_block)
+            if outlet_override is not None:
+                return outlet_override
+
+            if self.outlet_name in control_safety and isinstance(
+                control_safety.get(self.outlet_name), dict
+            ):
+                return control_safety[self.outlet_name]
+
+            return control_safety
+
+        return {}
+
+    def _extract_outlet_config(self, control: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        outlets = control.get("outlets")
+
+        if isinstance(outlets, dict):
+            candidate = outlets.get(self.outlet_name)
+            if isinstance(candidate, dict):
+                return candidate
+
+        if isinstance(outlets, list):
+            for entry in outlets:
+                if (
+                    isinstance(entry, dict)
+                    and entry.get("outlet_name") == self.outlet_name
+                ):
+                    return entry
+
+        return None
+
+    def _match_outlet_from_block(self, outlets_block: Any) -> Optional[Dict[str, Any]]:
+        if isinstance(outlets_block, dict):
+            candidate = outlets_block.get(self.outlet_name)
+            if isinstance(candidate, dict):
+                return candidate
+
+        if isinstance(outlets_block, list):
+            for entry in outlets_block:
+                if (
+                    isinstance(entry, dict)
+                    and entry.get("outlet_name") == self.outlet_name
+                ):
+                    return entry
+
+        return None
+
+    def _safety_settings(self) -> Tuple[Optional[bool], Optional[int], bool]:
+        """Return parsed safety target, timeout (seconds), and enforce flag."""
+
+        if not self._safety_enforce:
+            return None, None, False
 
         if not self._safety_target_state:
-            return None, None
+            return None, None, False
 
         normalized = str(self._safety_target_state).lower()
         if normalized not in {"on", "off"}:
             logger.warning(
                 "Invalid safety target_state '%s' - expected 'on' or 'off'", self._safety_target_state
             )
-            return None, None
+            return None, None, False
 
         if self._safety_timeout_minutes is None:
             logger.warning(
                 "Safety target configured without a timeout for outlet '%s'", self.outlet_name
             )
-            return None, None
+            return None, None, False
 
         if self._safety_timeout_minutes <= 0:
-            return None, None
+            return None, None, False
 
-        return normalized == "on", int(self._safety_timeout_minutes * 60)
+        return normalized == "on", int(self._safety_timeout_minutes * 60), True
 
     async def _apply_safety_programming(self, command_state: bool) -> None:
         """Program or clear safety timers based on configuration and hardware support."""
 
-        target_state, timeout_seconds = self._safety_settings()
+        target_state, timeout_seconds, enforce = self._safety_settings()
 
-        if target_state is None or timeout_seconds is None:
+        if not enforce or target_state is None or timeout_seconds is None:
             await self._clear_safety_programming()
             return
 

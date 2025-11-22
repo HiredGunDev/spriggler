@@ -30,6 +30,10 @@ class DummyOutlet:
         self.off_called = False
         self.is_on = False
         self.update_calls = 0
+        self.set_timer_calls = []
+        self.schedule_rules = []
+        self.delete_timer_calls = 0
+        self.delete_schedule_calls = 0
 
     async def turn_on(self):  # pragma: no cover - exercised through wrapper
         await asyncio.sleep(0)
@@ -44,6 +48,22 @@ class DummyOutlet:
     async def update(self):  # pragma: no cover - exercised through wrapper
         await asyncio.sleep(0)
         self.update_calls += 1
+
+    async def set_timer(self, timeout_seconds, target_state):
+        await asyncio.sleep(0)
+        self.set_timer_calls.append((timeout_seconds, target_state))
+
+    async def add_schedule_rule(self, rule):
+        await asyncio.sleep(0)
+        self.schedule_rules.append(rule)
+
+    async def delete_timer(self):
+        await asyncio.sleep(0)
+        self.delete_timer_calls += 1
+
+    async def delete_schedule_rules(self):
+        await asyncio.sleep(0)
+        self.delete_schedule_calls += 1
 
 
 class DummyProtocol:
@@ -233,3 +253,85 @@ def test_configuration_validation(control_block, expected_message):
         kasa_module.KasaPowerbar({"id": "bad", "control": control_block})
 
     assert expected_message in str(exc.value)
+
+
+def test_outlet_specific_safety_precedence(monkeypatch):
+    heater_outlet = DummyOutlet("Heater")
+    fan_outlet = DummyOutlet("Fan")
+
+    strip = DummyStrip(host="192.168.1.77", outlets=[heater_outlet, fan_outlet])
+
+    def mock_smart_strip(host):
+        assert host == "192.168.1.77"
+        return strip
+
+    monkeypatch.setattr(kasa_module, "SmartStrip", mock_smart_strip)
+
+    control_base = {
+        "ip_address": "192.168.1.77",
+        "outlet_name": "Heater",
+        "outlets": [
+            {
+                "outlet_name": "Heater",
+                "safety": {
+                    "target_state": "off",
+                    "timeout_minutes": 5,
+                    "enforce": True,
+                },
+            },
+            {
+                "outlet_name": "Fan",
+                "safety": {
+                    "target_state": "on",
+                    "timeout_minutes": 1,
+                    "enforce": False,
+                },
+            },
+        ],
+        "safety": {"target_state": "off", "timeout_minutes": 10},
+    }
+
+    heater_device = kasa_module.KasaPowerbar(
+        {"id": "heater", "control": dict(control_base, outlet_name="Heater")}
+    )
+    fan_device = kasa_module.KasaPowerbar(
+        {"id": "fan", "control": dict(control_base, outlet_name="Fan")}
+    )
+
+    asyncio.run(heater_device.initialize())
+    asyncio.run(fan_device.initialize())
+
+    asyncio.run(heater_device.turn_on())
+    asyncio.run(fan_device.turn_on())
+
+    assert heater_outlet.set_timer_calls == [(300, False)]
+    assert fan_outlet.set_timer_calls == []
+    assert fan_outlet.delete_timer_calls == 1
+    assert heater_device.get_metadata()["safety"]["target_state"] == "off"
+    assert fan_device.get_metadata()["safety"]["enforce"] is False
+
+
+def test_default_safety_used_when_no_outlet_override(monkeypatch):
+    humidifier_outlet = DummyOutlet("Humidifier")
+
+    def mock_smart_strip(host):
+        return DummyStrip(host=host, outlets=[humidifier_outlet])
+
+    monkeypatch.setattr(kasa_module, "SmartStrip", mock_smart_strip)
+
+    device = kasa_module.KasaPowerbar(
+        {
+            "id": "humidifier",
+            "control": {
+                "ip_address": "192.168.1.88",
+                "outlet_name": "Humidifier",
+                "safety": {"target_state": "on", "timeout_minutes": 0.5},
+            },
+        }
+    )
+
+    asyncio.run(device.initialize())
+    asyncio.run(device.turn_off())
+
+    assert humidifier_outlet.set_timer_calls == [(30, True)]
+    assert device.get_metadata()["safety"]["scope"] == "outlet"
