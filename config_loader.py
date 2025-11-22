@@ -46,6 +46,11 @@ def load_config(config_file_path):
     try:
         validate_schema(config, schema)
     except SchemaValidationError as exc:
-        raise ConfigError(f"Schema validation error at {exc.location}: {exc.message}") from exc
+        if any(part == "safety" for part in exc.path):
+            prefix = "Safety validation error"
+        else:
+            prefix = "Schema validation error"
+
+        raise ConfigError(f"{prefix} at {exc.location}: {exc.message}") from exc
 
     return config
