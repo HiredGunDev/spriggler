@@ -82,7 +82,7 @@ be executed or logged as a dry run.
 ### Schema
 
 - **loop_interval_seconds** (number, optional): Delay between control loop cycles. Defaults to `1.0` seconds.
-- **heartbeat_interval_seconds** (number, optional): Interval between heartbeat log entries. Defaults to `5.0` seconds.
+- **heartbeat_interval_seconds** (number, optional): Interval between heartbeat log entries. Defaults to `60.0` seconds, cannot be set below one minute, and heartbeats are only emitted when no other logs have been written since the prior heartbeat.
 - **debounce_seconds** (number, optional): Minimum time between repeated commands to the same device. Defaults to `5.0` seconds.
 - **state_refresh_seconds** (number, optional): Minimum time between re-sending the same command for the same property/device pair. Defaults to `60` seconds to avoid spamming Wi-Fi devices.
 - **dry_run** (boolean, optional): When `true`, actuator commands are logged but not executed.
