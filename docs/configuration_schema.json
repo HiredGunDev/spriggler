@@ -166,6 +166,16 @@
                   "additionalProperties": false
                 }
               }
+            },
+            "safety": {
+              "type": "object",
+              "properties": {
+                "state": { "type": "string", "enum": ["on", "off"] },
+                "timeout_minutes": { "type": ["integer", "number"], "minimum": 0 },
+                "enforce": { "type": "boolean" }
+              },
+              "required": ["state", "timeout_minutes", "enforce"],
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
@@ -211,6 +221,16 @@
                   "required": ["property", "type"],
                   "additionalProperties": false
                 }
+              },
+              "safety": {
+                "type": "object",
+                "properties": {
+                  "state": { "type": "string", "enum": ["on", "off"] },
+                  "timeout_minutes": { "type": ["integer", "number"], "minimum": 0 },
+                  "enforce": { "type": "boolean" }
+                },
+                "required": ["state", "timeout_minutes", "enforce"],
+                "additionalProperties": false
               }
             },
             "required": ["id", "what", "how", "control"],
