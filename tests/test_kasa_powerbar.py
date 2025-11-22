@@ -28,14 +28,22 @@ class DummyOutlet:
         self.alias = alias
         self.on_called = False
         self.off_called = False
+        self.is_on = False
+        self.update_calls = 0
 
     async def turn_on(self):  # pragma: no cover - exercised through wrapper
         await asyncio.sleep(0)
         self.on_called = True
+        self.is_on = True
 
     async def turn_off(self):  # pragma: no cover - exercised through wrapper
         await asyncio.sleep(0)
         self.off_called = True
+        self.is_on = False
+
+    async def update(self):  # pragma: no cover - exercised through wrapper
+        await asyncio.sleep(0)
+        self.update_calls += 1
 
 
 class DummyProtocol:

@@ -376,6 +376,26 @@ class EnvironmentController:
             )
             return
 
+        if command in {"turn_on", "turn_off"}:
+            desired_state = command == "turn_on"
+            current_state = await self._device_power_state(
+                device=device,
+                device_id=device_id,
+                environment_id=environment_id,
+            )
+
+            if current_state is not None and current_state == desired_state:
+                self._log(
+                    (
+                        f"Skipping {command} for '{device_id}' controlling '{property_name}'; "
+                        f"device already {'on' if desired_state else 'off'}"
+                    ),
+                    level="INFO",
+                    entity=environment_id,
+                )
+                self._last_commands[history_key] = (command, now)
+                return
+
         summary = (
             f"{command} {device_id} for {property_name} in {environment_id} "
             f"(value={property_value}, target={target_range})"
@@ -399,6 +419,29 @@ class EnvironmentController:
                 level="ERROR",
                 entity=environment_id,
             )
+
+    async def _device_power_state(
+        self, *, device: object, device_id: str, environment_id: str
+    ) -> Optional[bool]:
+        """Return True/False when a device exposes a power state API."""
+
+        state_fn = getattr(device, "is_on", None)
+        if not callable(state_fn):
+            return None
+
+        try:
+            state = state_fn()
+            if isawaitable(state):
+                state = await state
+        except Exception as exc:  # pragma: no cover - defensive logging
+            self._log(
+                f"Unable to query power state for '{device_id}': {exc}",
+                level="WARNING",
+                entity=environment_id,
+            )
+            return None
+
+        return bool(state) if state is not None else None
 
     def _device_effects(self, device_id: str) -> List[Mapping[str, object]]:
         definition = self.device_definitions.get(device_id, {})

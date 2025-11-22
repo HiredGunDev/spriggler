@@ -205,6 +205,21 @@ class VesyncHumidifier:
         self._device.turn_on()
         logger.debug("Issued ON command to %s", self.device_name)
 
+    def is_on(self) -> bool:
+        """Return True when the humidifier is running."""
+
+        self._ensure_initialized()
+
+        update = getattr(self._device, "update", None)
+        if callable(update):
+            update()
+
+        status = getattr(self._device, "device_status", None)
+        if isinstance(status, str):
+            return status.lower() == "on"
+
+        return bool(getattr(self._device, "is_on", False))
+
     def turn_off(self) -> None:
         """Turn off the humidifier."""
 

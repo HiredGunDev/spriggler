@@ -16,6 +16,7 @@ class MockDevice:
         self.location = config.get("location", self.name)
         self.address = config.get("address", control.get("ip_address", f"mock://{self.name}"))
         self.timeout = config.get("timeout", 300)
+        self._is_on = False
 
     def initialize(self):
         logger.bind(COMPONENT_TYPE="device", ENTITY_NAME=self.id).info(
@@ -33,3 +34,20 @@ class MockDevice:
             "outlet": self.outlet_name,
             "power_rating": self.power_rating,
         }
+
+    def is_on(self) -> bool:
+        """Return True when the mock device is powered on."""
+
+        return self._is_on
+
+    def turn_on(self) -> None:
+        """Simulate powering on the device."""
+
+        self._is_on = True
+        logger.debug("Mock device %s turned on", self.id)
+
+    def turn_off(self) -> None:
+        """Simulate powering off the device."""
+
+        self._is_on = False
+        logger.debug("Mock device %s turned off", self.id)
