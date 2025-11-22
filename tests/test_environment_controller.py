@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 from controllers.environment_controller import EnvironmentController
 
@@ -56,6 +57,54 @@ def build_controller():
     return EnvironmentController(config=config, debounce_seconds=0, state_refresh_seconds=0)
 
 
+def build_logging_controller(*, state_refresh_seconds: float = 1.0):
+    logs = []
+
+    def log_callback(message, *, level, component_type, entity_name):
+        logs.append({
+            "message": message,
+            "level": level,
+            "component_type": component_type,
+            "entity_name": entity_name,
+        })
+
+    config = {
+        "environments": {
+            "definitions": [
+                {
+                    "id": "env1",
+                    "properties": {
+                        "temperature": {
+                            "controllers": [],
+                            "schedules": ["always"],
+                            "sensors": ["sensor1"],
+                        }
+                    },
+                }
+            ]
+        },
+        "schedules": {
+            "definitions": [
+                {
+                    "id": "always",
+                    "time_range": None,
+                    "targets": {"temperature": {"min": 20, "max": 25}},
+                }
+            ]
+        },
+        "devices": {"definitions": [], "defaults": {"effects": {}}},
+    }
+
+    controller = EnvironmentController(
+        config=config,
+        debounce_seconds=0,
+        state_refresh_seconds=state_refresh_seconds,
+        log_callback=log_callback,
+    )
+
+    return controller, logs
+
+
 def test_skips_command_when_device_already_on():
     controller = build_controller()
     device = TrackingDevice(initial_state=True)
@@ -88,3 +137,35 @@ def test_issues_command_when_state_differs():
     )
 
     assert device.turn_on_called is True
+
+
+def test_missing_readings_suppressed_until_cooldown():
+    controller, logs = build_logging_controller(state_refresh_seconds=0.5)
+
+    asyncio.run(controller.evaluate(sensor_data={}, devices={}))
+    asyncio.run(controller.evaluate(sensor_data={}, devices={}))
+
+    missing_logs = [log for log in logs if "No readings available" in log["message"]]
+    assert len(missing_logs) == 1
+
+    time.sleep(0.6)
+    asyncio.run(controller.evaluate(sensor_data={}, devices={}))
+
+    missing_logs = [log for log in logs if "No readings available" in log["message"]]
+    assert len(missing_logs) == 2
+
+
+def test_missing_readings_reset_after_data():
+    controller, logs = build_logging_controller(state_refresh_seconds=10)
+
+    asyncio.run(controller.evaluate(sensor_data={}, devices={}))
+    asyncio.run(
+        controller.evaluate(
+            sensor_data={"sensor1": {"temperature": 22}},
+            devices={},
+        )
+    )
+    asyncio.run(controller.evaluate(sensor_data={}, devices={}))
+
+    missing_logs = [log for log in logs if "No readings available" in log["message"]]
+    assert len(missing_logs) == 2
