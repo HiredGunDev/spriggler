@@ -1,4 +1,5 @@
 from .govee_utils import (
+    GOVEE_H5100_MANUFACTURER_ID,
     decode_h5100_manufacturer_data,
     ensure_shared_bleak_scanner_running,
     get_shared_bleak_scanner,
@@ -10,6 +11,8 @@ from .govee_utils import (
 class GoveeH5100Humidity:
     """Interface with the Govee H5100 BLE sensor for humidity readings."""
 
+    BLE_MANUFACTURER_ID = GOVEE_H5100_MANUFACTURER_ID
+
     def __init__(self, config: dict):
         self.config = dict(config)
         self.id = self.config.get("id")
@@ -18,6 +21,9 @@ class GoveeH5100Humidity:
         self.refresh_rate = self.config.get("refresh_rate", 30)
         self.current_humidity = None
         self.battery_level = None
+        self.last_emitted_humidity = None
+        self.last_emitted_battery = None
+        self.suppressed_identical_advertisements = 0
         self.logger = None
         self.scanner = None
 
@@ -33,14 +39,6 @@ class GoveeH5100Humidity:
 
     def handle_advertisement(self, device, advertisement_data):
         """Process BLE advertisement data to extract humidity information."""
-        self.logger.debug(
-            "Advertisement callback invoked",
-            device_address=getattr(device, "address", None),
-            device_name=getattr(device, "name", None),
-            manufacturer_data_present=bool(advertisement_data.manufacturer_data),
-            advertisement_name=getattr(advertisement_data, "local_name", None),
-        )
-
         device_address = getattr(device, "address", None)
         device_name = getattr(device, "name", None)
         advertisement_name = getattr(advertisement_data, "local_name", None)
@@ -60,7 +58,6 @@ class GoveeH5100Humidity:
                     advertisement_name=advertisement_name,
                     device_name=device_name,
                 )
-                return
 
         if self.normalized_identifier and device is not None and not matches_expected_signature:
             normalized_address = self._normalize_identifier(device_address)
@@ -84,9 +81,12 @@ class GoveeH5100Humidity:
 
         manufacturer_data = None
         if advertisement_data.manufacturer_data:
-            manufacturer_values = list(advertisement_data.manufacturer_data.values())
-            if manufacturer_values:
-                manufacturer_data = manufacturer_values[0]
+            manufacturer_data = advertisement_data.manufacturer_data.get(self.BLE_MANUFACTURER_ID)
+
+            if manufacturer_data is None:
+                manufacturer_values = list(advertisement_data.manufacturer_data.values())
+                if manufacturer_values:
+                    manufacturer_data = manufacturer_values[0]
 
         if not manufacturer_data:
             self.logger.debug(
@@ -97,21 +97,31 @@ class GoveeH5100Humidity:
             )
             return
 
-        self.logger.debug(
-            "Advertisement received",
-            device_address=device_address,
-            device_name=device_name,
-            manufacturer_data=manufacturer_data.hex() if hasattr(manufacturer_data, "hex") else manufacturer_data,
-            manufacturer_data_length=len(manufacturer_data) if manufacturer_data is not None else 0,
-        )
-
         data = self.decode_manufacturer_data(manufacturer_data)
         if data:
             self.logger.debug("Decoded manufacturer data", decoded_payload=data)
             self.current_humidity = data["humidity"]
             self.battery_level = data["battery"]
+            has_previous_reading = self.last_emitted_humidity is not None
+
+            if has_previous_reading and (
+                self.current_humidity == self.last_emitted_humidity
+                and self.battery_level == self.last_emitted_battery
+            ):
+                self.suppressed_identical_advertisements += 1
+                return
+
+            suppressed = self.suppressed_identical_advertisements
+            self.suppressed_identical_advertisements = 0
+            self.last_emitted_humidity = self.current_humidity
+            self.last_emitted_battery = self.battery_level
+
             self.logger.info(
-                f"Humidity: {self.current_humidity:.2f}%, Battery: {self.battery_level if self.battery_level is not None else 'N/A'}%"
+                (
+                    f"Humidity: {self.current_humidity:.2f}%, "
+                    f"Battery: {self.battery_level if self.battery_level is not None else 'N/A'}% "
+                    f"(suppressed {suppressed} identical advertisements)"
+                )
             )
         else:
             self.logger.warning("Failed to decode manufacturer data.")
