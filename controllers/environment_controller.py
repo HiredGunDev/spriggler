@@ -40,6 +40,7 @@ class EnvironmentController:
         self._log_callback = log_callback
         self._last_commands: Dict[tuple[str, str], tuple[str, float]] = {}
         self._last_property_logs: Dict[tuple[str, str], tuple[float, str, object, object]] = {}
+        self._missing_reading_logs: Dict[tuple[str, str], float] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -104,12 +105,21 @@ class EnvironmentController:
                 )
 
                 if property_value is None:
-                    self._log(
-                        f"No readings available for property '{property_name}'",
-                        level="WARNING",
-                        entity=environment_id,
-                    )
+                    missing_key = (environment_id, property_name)
+                    now = time.monotonic()
+                    last_missing = self._missing_reading_logs.get(missing_key)
+
+                    if last_missing is None or now - last_missing >= self.state_refresh_seconds:
+                        self._log(
+                            f"No readings available for property '{property_name}'",
+                            level="WARNING",
+                            entity=environment_id,
+                        )
+                        self._missing_reading_logs[missing_key] = now
+
                     continue
+
+                self._missing_reading_logs.pop((environment_id, property_name), None)
 
                 decision = self._decision(property_value, target_range)
 
