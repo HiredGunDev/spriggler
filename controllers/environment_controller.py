@@ -245,12 +245,6 @@ class EnvironmentController:
                 )
                 continue
 
-            self._log(
-                f"Setting {property_name} to {desired_state} via {command}",
-                level="INFO",
-                entity=environment_id,
-            )
-
             device_effects = self._device_effects(device_id)
             if not device_effects:
                 self._log(
@@ -264,7 +258,7 @@ class EnvironmentController:
                 if effect.get("property") != property_name:
                     continue
 
-                await self._issue_command(
+                command_issued = await self._issue_command(
                     device_id=device_id,
                     devices=devices,
                     command=command,
@@ -273,6 +267,13 @@ class EnvironmentController:
                     property_value=desired_state,
                     target_range={"state": desired_state},
                 )
+
+                if command_issued:
+                    self._log(
+                        f"Setting {property_name} to {desired_state} via {command}",
+                        level="INFO",
+                        entity=environment_id,
+                    )
 
     async def _apply_device_commands(
         self,
@@ -341,7 +342,7 @@ class EnvironmentController:
         property_name: str,
         property_value: float,
         target_range: Mapping[str, object],
-    ) -> None:
+    ) -> bool:
         now = time.monotonic()
         history_key = (device_id, property_name)
         last_action, last_time = self._last_commands.get(history_key, (None, 0))
@@ -355,7 +356,7 @@ class EnvironmentController:
                     level="DEBUG",
                     entity=environment_id,
                 )
-                return
+                return False
 
             if now - last_time < self.state_refresh_seconds:
                 self._log(
@@ -366,7 +367,7 @@ class EnvironmentController:
                     level="DEBUG",
                     entity=environment_id,
                 )
-                return
+                return False
 
         device = devices.get(device_id)
         if not device:
@@ -375,7 +376,7 @@ class EnvironmentController:
                 level="ERROR",
                 entity=environment_id,
             )
-            return
+            return False
 
         command_fn = getattr(device, command, None)
         if not callable(command_fn):
@@ -384,7 +385,7 @@ class EnvironmentController:
                 level="ERROR",
                 entity=environment_id,
             )
-            return
+            return False
 
         if command in {"turn_on", "turn_off"}:
             desired_state = command == "turn_on"
@@ -404,7 +405,7 @@ class EnvironmentController:
                     entity=environment_id,
                 )
                 self._last_commands[history_key] = (command, now)
-                return
+                return False
 
         summary = (
             f"{command} {device_id} for {property_name} in {environment_id} "
@@ -414,7 +415,7 @@ class EnvironmentController:
         if self.dry_run:
             self._log(f"[dry-run] Would {summary}", level="INFO", entity=environment_id)
             self._last_commands[history_key] = (command, now)
-            return
+            return True
 
         try:
             result = command_fn()
@@ -423,12 +424,15 @@ class EnvironmentController:
 
             self._log(summary, level="INFO", entity=environment_id)
             self._last_commands[history_key] = (command, now)
+            return True
         except Exception as exc:  # pragma: no cover - defensive logging
             self._log(
                 f"Failed to execute {command} on '{device_id}': {exc}",
                 level="ERROR",
                 entity=environment_id,
             )
+
+        return False
 
     async def _device_power_state(
         self, *, device: object, device_id: str, environment_id: str
