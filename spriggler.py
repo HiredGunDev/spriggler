@@ -25,8 +25,9 @@ class Spriggler:
         self._devices_by_id = {}
         self._last_sensor_data = {}
         self.loop_interval = 1.0
-        self.heartbeat_interval = 5.0
+        self.heartbeat_interval = 60.0
         self.environment_controller = None
+        self._last_log_time = time.monotonic()
 
         # Setup logging
         self.setup_logging()
@@ -71,6 +72,7 @@ class Spriggler:
         if not isinstance(entity_name, str):
             entity_name = str(entity_name)
         logger.bind(COMPONENT_TYPE=component_type, ENTITY_NAME=entity_name).log(level.upper(), message)
+        self._last_log_time = time.monotonic()
 
     async def initialize_config(self):
         """Initialize the configuration using config_loader."""
@@ -88,8 +90,9 @@ class Spriggler:
         # Allow optional runtime tuning when present in configuration extensions
         runtime_settings = self.config.get("runtime", {})
         self.loop_interval = float(runtime_settings.get("loop_interval_seconds", self.loop_interval))
-        self.heartbeat_interval = float(
-            runtime_settings.get("heartbeat_interval_seconds", self.heartbeat_interval)
+        self.heartbeat_interval = max(
+            60.0,
+            float(runtime_settings.get("heartbeat_interval_seconds", self.heartbeat_interval)),
         )
 
         config_snapshot = json.dumps(self.config, indent=2, sort_keys=True)
@@ -241,7 +244,6 @@ class Spriggler:
         )
         if self.environment_controller is None:
             self.initialize_controller()
-        heartbeat_timer = time.monotonic()
         cycle_count = 0
         try:
             while True:
@@ -254,13 +256,12 @@ class Spriggler:
                     )
 
                 now = time.monotonic()
-                if now - heartbeat_timer >= self.heartbeat_interval:
+                if now - self._last_log_time >= self.heartbeat_interval:
                     self.log(
                         "Heartbeat: Spriggler is running.",
                         component_type="system",
                         entity_name="heartbeat",
                     )
-                    heartbeat_timer = now
 
                 cycle_count += 1
                 if max_cycles is not None and cycle_count >= max_cycles:
