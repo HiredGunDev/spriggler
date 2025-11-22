@@ -10,6 +10,7 @@ import types
 
 dummy_kasa = types.ModuleType("kasa")
 dummy_kasa.Discover = types.SimpleNamespace(discover=None)
+dummy_kasa.Module = types.SimpleNamespace(IotCountdown="countdown")
 
 
 class _PlaceholderStrip:
@@ -34,6 +35,11 @@ class DummyOutlet:
         self.schedule_rules = []
         self.delete_timer_calls = 0
         self.delete_schedule_calls = 0
+        self.countdown_module = DummyCountdown()
+        self.modules = {
+            dummy_kasa.Module.IotCountdown: self.countdown_module,
+            "countdown": self.countdown_module,
+        }
 
     async def turn_on(self):  # pragma: no cover - exercised through wrapper
         await asyncio.sleep(0)
@@ -64,6 +70,23 @@ class DummyOutlet:
     async def delete_schedule_rules(self):
         await asyncio.sleep(0)
         self.delete_schedule_calls += 1
+
+
+class DummyCountdown:
+    def __init__(self):
+        self.add_rule_calls = []
+        self.delete_all_calls = 0
+
+    async def delete_all_rules(self):
+        await asyncio.sleep(0)
+        self.delete_all_calls += 1
+
+    async def call(self, command, payload=None):
+        await asyncio.sleep(0)
+        if command != "add_rule":
+            raise AssertionError(f"Unexpected command {command}")
+
+        self.add_rule_calls.append(payload or {})
 
 
 class DummyProtocol:
@@ -304,9 +327,12 @@ def test_outlet_specific_safety_precedence(monkeypatch):
     asyncio.run(heater_device.turn_on())
     asyncio.run(fan_device.turn_on())
 
-    assert heater_outlet.set_timer_calls == [(300, False)]
-    assert fan_outlet.set_timer_calls == []
-    assert fan_outlet.delete_timer_calls == 1
+    assert heater_outlet.countdown_module.add_rule_calls == [
+        {"act": 0, "delay": 300, "enable": 1, "name": "spriggler-safety"}
+    ]
+    assert heater_outlet.countdown_module.delete_all_calls == 1
+    assert fan_outlet.countdown_module.add_rule_calls == []
+    assert fan_outlet.countdown_module.delete_all_calls == 1
     assert heater_device.get_metadata()["safety"]["target_state"] == "off"
     assert fan_device.get_metadata()["safety"]["enforce"] is False
 
@@ -333,5 +359,8 @@ def test_default_safety_used_when_no_outlet_override(monkeypatch):
     asyncio.run(device.initialize())
     asyncio.run(device.turn_off())
 
-    assert humidifier_outlet.set_timer_calls == [(30, True)]
+    assert humidifier_outlet.countdown_module.delete_all_calls == 1
+    assert humidifier_outlet.countdown_module.add_rule_calls == [
+        {"act": 1, "delay": 30, "enable": 1, "name": "spriggler-safety"}
+    ]
     assert device.get_metadata()["safety"]["scope"] == "outlet"

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
 try:  # pragma: no cover - import is validated during unit tests
-    from kasa import Discover, SmartStrip
+    from kasa import Discover, Module, SmartStrip
 except ImportError as exc:  # pragma: no cover - surfaced during initialization
     raise ImportError(
         "The 'python-kasa' package is required to use the KASA_Powerbar device"
@@ -322,6 +322,29 @@ class KasaPowerbar:
 
         return normalized == "on", int(self._safety_timeout_minutes * 60), True
 
+    def _countdown_module(self):
+        """Return the countdown module when exposed by the outlet."""
+
+        modules = getattr(self._outlet, "modules", None)
+        if not modules:
+            return None
+
+        candidates = [getattr(Module, "IotCountdown", None), "countdown"]
+
+        for key in candidates:
+            if key is None:
+                continue
+
+            try:
+                countdown = modules.get(key) if hasattr(modules, "get") else modules[key]
+            except Exception:  # pragma: no cover - defensive access for kasa implementations
+                continue
+
+            if countdown:
+                return countdown
+
+        return None
+
     async def _apply_safety_programming(self, command_state: bool) -> None:
         """Program or clear safety timers based on configuration and hardware support."""
 
@@ -336,6 +359,36 @@ class KasaPowerbar:
             await self._clear_safety_programming()
             return
 
+        countdown_module = self._countdown_module()
+        if countdown_module is not None:
+            try:
+                try:
+                    await countdown_module.delete_all_rules()
+                except Exception:  # pragma: no cover - best-effort cleanup
+                    pass
+
+                await countdown_module.call(
+                    "add_rule",
+                    {
+                        "act": 1 if target_state else 0,
+                        "delay": timeout_seconds,
+                        "enable": 1,
+                        "name": "spriggler-safety",
+                    },
+                )
+                logger.debug(
+                    "Programmed countdown failsafe to switch %s in %s seconds",
+                    "on" if target_state else "off",
+                    timeout_seconds,
+                )
+                return
+            except Exception as exc:  # pragma: no cover - dependent on kasa implementation
+                logger.warning(
+                    "Failed to program countdown failsafe for outlet '%s': %s",
+                    self.outlet_name,
+                    exc,
+                )
+
         if hasattr(self._outlet, "set_timer"):
             try:
                 await self._outlet.set_timer(timeout_seconds, target_state)
@@ -344,13 +397,15 @@ class KasaPowerbar:
                     "on" if target_state else "off",
                     timeout_seconds,
                 )
+                return
             except Exception as exc:  # pragma: no cover - dependent on hardware support
                 logger.warning(
                     "Failed to program safety timer for outlet '%s': %s",
                     self.outlet_name,
                     exc,
                 )
-        elif hasattr(self._outlet, "add_schedule_rule"):
+
+        if hasattr(self._outlet, "add_schedule_rule"):
             try:
                 await self._outlet.add_schedule_rule(
                     {
@@ -365,22 +420,35 @@ class KasaPowerbar:
                     "on" if target_state else "off",
                     timeout_seconds,
                 )
+                return
             except Exception as exc:  # pragma: no cover - dependent on hardware support
                 logger.warning(
                     "Failed to program safety schedule for outlet '%s': %s",
                     self.outlet_name,
                     exc,
                 )
-        else:  # pragma: no cover - depends on kasa implementation
-            logger.warning(
-                "KASA outlet '%s' does not expose timer or schedule controls; cannot enforce safety",
-                self.outlet_name,
-            )
+
+        logger.warning(
+            "KASA outlet '%s' does not expose countdown, timer, or schedule controls; cannot enforce safety",
+            self.outlet_name,
+        )
 
     async def _clear_safety_programming(self) -> None:
         """Attempt to clear any previously programmed safety timers or schedules."""
 
         cleared = False
+
+        countdown_module = self._countdown_module()
+        if countdown_module is not None:
+            try:
+                await countdown_module.delete_all_rules()
+                cleared = True
+            except Exception as exc:  # pragma: no cover - dependent on hardware support
+                logger.warning(
+                    "Failed to clear countdown failsafe for outlet '%s': %s",
+                    self.outlet_name,
+                    exc,
+                )
 
         if hasattr(self._outlet, "delete_timer"):
             try:
