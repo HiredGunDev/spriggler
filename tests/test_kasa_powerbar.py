@@ -10,7 +10,7 @@ import types
 
 dummy_kasa = types.ModuleType("kasa")
 dummy_kasa.Discover = types.SimpleNamespace(discover=None)
-dummy_kasa.Module = types.SimpleNamespace(IotCountdown="countdown")
+dummy_kasa.Module = types.SimpleNamespace(IotCountdown="countdown", CountDown="count_down")
 
 
 class _PlaceholderStrip:
@@ -25,7 +25,7 @@ from devices import KASA_Powerbar as kasa_module  # noqa: E402
 
 
 class DummyOutlet:
-    def __init__(self, alias):
+    def __init__(self, alias, *, modules=None, countdown_module=None):
         self.alias = alias
         self.on_called = False
         self.off_called = False
@@ -35,10 +35,11 @@ class DummyOutlet:
         self.schedule_rules = []
         self.delete_timer_calls = 0
         self.delete_schedule_calls = 0
-        self.countdown_module = DummyCountdown()
-        self.modules = {
+        self.countdown_module = countdown_module or DummyCountdown()
+        self.modules = modules or {
             dummy_kasa.Module.IotCountdown: self.countdown_module,
             "countdown": self.countdown_module,
+            "count_down": self.countdown_module,
         }
 
     async def turn_on(self):  # pragma: no cover - exercised through wrapper
@@ -364,3 +365,36 @@ def test_default_safety_used_when_no_outlet_override(monkeypatch):
         {"act": 1, "delay": 30, "enable": 1, "name": "spriggler-safety"}
     ]
     assert device.get_metadata()["safety"]["scope"] == "outlet"
+
+
+def test_countdown_module_supports_count_down(monkeypatch):
+    custom_countdown = DummyCountdown()
+    outlet = DummyOutlet(
+        "Heater",
+        modules={"count_down": custom_countdown},
+        countdown_module=custom_countdown,
+    )
+
+    def mock_smart_strip(host):
+        return DummyStrip(host=host, outlets=[outlet])
+
+    monkeypatch.setattr(kasa_module, "SmartStrip", mock_smart_strip)
+
+    device = kasa_module.KasaPowerbar(
+        {
+            "id": "heater",
+            "control": {
+                "ip_address": "192.168.1.90",
+                "outlet_name": "Heater",
+                "safety": {"target_state": "off", "timeout_minutes": 0.1},
+            },
+        }
+    )
+
+    asyncio.run(device.initialize())
+    asyncio.run(device.turn_on())
+
+    assert outlet.countdown_module.delete_all_calls == 1
+    assert outlet.countdown_module.add_rule_calls == [
+        {"act": 0, "delay": 6, "enable": 1, "name": "spriggler-safety"}
+    ]

@@ -329,7 +329,13 @@ class KasaPowerbar:
         if not modules:
             return None
 
-        candidates = [getattr(Module, "IotCountdown", None), "countdown"]
+        candidates = [
+            getattr(Module, "IotCountdown", None),
+            getattr(Module, "CountDown", None),
+            getattr(Module, "IotCountDown", None),
+            "count_down",
+            "countdown",
+        ]
 
         for key in candidates:
             if key is None:
