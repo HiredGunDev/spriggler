@@ -36,6 +36,7 @@ class DummyOutlet:
         self.delete_timer_calls = 0
         self.delete_schedule_calls = 0
         self.countdown_module = countdown_module or DummyCountdown()
+        self.query_helper_calls = []
         self.modules = modules or {
             dummy_kasa.Module.IotCountdown: self.countdown_module,
             "countdown": self.countdown_module,
@@ -71,6 +72,14 @@ class DummyOutlet:
     async def delete_schedule_rules(self):
         await asyncio.sleep(0)
         self.delete_schedule_calls += 1
+
+    async def _query_helper(self, target, command, params):
+        await asyncio.sleep(0)
+        self.query_helper_calls.append((target, command, params))
+        if target == "count_down" and command == "delete_all_rules":
+            self.countdown_module.delete_all_calls += 1
+        if target == "count_down" and command == "add_rule":
+            self.countdown_module.add_rule_calls.append(params or {})
 
 
 class DummyCountdown:
@@ -328,10 +337,12 @@ def test_outlet_specific_safety_precedence(monkeypatch):
     asyncio.run(heater_device.turn_on())
     asyncio.run(fan_device.turn_on())
 
-    assert heater_outlet.countdown_module.add_rule_calls == [
-        {"act": 0, "delay": 300, "enable": 1, "name": "spriggler-safety"}
+    assert heater_outlet.query_helper_calls == [
+        ("count_down", "delete_all_rules", {}),
+        ("count_down", "add_rule", {"act": 0, "delay": 300, "enable": 1, "name": "spriggler_failsafe"}),
     ]
     assert heater_outlet.countdown_module.delete_all_calls == 1
+    assert fan_outlet.query_helper_calls == [("count_down", "delete_all_rules", {})]
     assert fan_outlet.countdown_module.add_rule_calls == []
     assert fan_outlet.countdown_module.delete_all_calls == 1
     assert heater_device.get_metadata()["safety"]["target_state"] == "off"
@@ -360,10 +371,11 @@ def test_default_safety_used_when_no_outlet_override(monkeypatch):
     asyncio.run(device.initialize())
     asyncio.run(device.turn_off())
 
-    assert humidifier_outlet.countdown_module.delete_all_calls == 1
-    assert humidifier_outlet.countdown_module.add_rule_calls == [
-        {"act": 1, "delay": 30, "enable": 1, "name": "spriggler-safety"}
+    assert humidifier_outlet.query_helper_calls == [
+        ("count_down", "delete_all_rules", {}),
+        ("count_down", "add_rule", {"act": 1, "delay": 30, "enable": 1, "name": "spriggler_failsafe"}),
     ]
+    assert humidifier_outlet.countdown_module.delete_all_calls == 1
     assert device.get_metadata()["safety"]["scope"] == "outlet"
 
 
@@ -394,7 +406,8 @@ def test_countdown_module_supports_count_down(monkeypatch):
     asyncio.run(device.initialize())
     asyncio.run(device.turn_on())
 
-    assert outlet.countdown_module.delete_all_calls == 1
-    assert outlet.countdown_module.add_rule_calls == [
-        {"act": 0, "delay": 6, "enable": 1, "name": "spriggler-safety"}
+    assert outlet.query_helper_calls == [
+        ("count_down", "delete_all_rules", {}),
+        ("count_down", "add_rule", {"act": 0, "delay": 6, "enable": 1, "name": "spriggler_failsafe"}),
     ]
+    assert outlet.countdown_module.delete_all_calls == 1
