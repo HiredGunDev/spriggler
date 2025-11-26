@@ -351,6 +351,89 @@ class KasaPowerbar:
 
         return None
 
+    async def _clear_countdown_rules(self, countdown_module=None) -> bool:
+        """Clear countdown rules via low-level helper when available."""
+
+        module = countdown_module or self._countdown_module()
+        if module is None:
+            return False
+
+        cleared = False
+
+        if hasattr(self._outlet, "_query_helper"):
+            try:
+                await self._outlet._query_helper("count_down", "delete_all_rules", {})
+                cleared = True
+            except Exception as exc:  # pragma: no cover - dependent on kasa implementation
+                logger.warning(
+                    "Failed to clear countdown failsafe for outlet '%s': %s",
+                    self.outlet_name,
+                    exc,
+                )
+
+        if not cleared:
+            try:
+                await module.delete_all_rules()
+                cleared = True
+            except Exception as exc:  # pragma: no cover - dependent on kasa implementation
+                logger.warning(
+                    "Failed to clear countdown failsafe for outlet '%s': %s",
+                    self.outlet_name,
+                    exc,
+                )
+
+        return cleared
+
+    async def _program_countdown_failsafe(
+        self, target_state: bool, timeout_seconds: int
+    ) -> bool:
+        """Program the HS300 internal countdown timer using kasa's query helper."""
+
+        countdown_module = self._countdown_module()
+        if countdown_module is None:
+            return False
+
+        await self._clear_countdown_rules(countdown_module)
+
+        params = {
+            "delay": timeout_seconds,
+            "act": 1 if target_state else 0,
+            "enable": 1,
+            "name": "spriggler_failsafe",
+        }
+
+        if hasattr(self._outlet, "_query_helper"):
+            try:
+                await self._outlet._query_helper("count_down", "add_rule", params)
+                logger.debug(
+                    "Programmed countdown failsafe to switch %s in %s seconds",
+                    "on" if target_state else "off",
+                    timeout_seconds,
+                )
+                return True
+            except Exception as exc:  # pragma: no cover - dependent on kasa implementation
+                logger.warning(
+                    "Failed to program countdown failsafe for outlet '%s': %s",
+                    self.outlet_name,
+                    exc,
+                )
+
+        try:
+            await countdown_module.call("add_rule", params)
+            logger.debug(
+                "Programmed countdown failsafe to switch %s in %s seconds",
+                "on" if target_state else "off",
+                timeout_seconds,
+            )
+            return True
+        except Exception as exc:  # pragma: no cover - dependent on kasa implementation
+            logger.warning(
+                "Failed to program countdown failsafe for outlet '%s': %s",
+                self.outlet_name,
+                exc,
+            )
+            return False
+
     async def _apply_safety_programming(self, command_state: bool) -> None:
         """Program or clear safety timers based on configuration and hardware support."""
 
@@ -365,35 +448,8 @@ class KasaPowerbar:
             await self._clear_safety_programming()
             return
 
-        countdown_module = self._countdown_module()
-        if countdown_module is not None:
-            try:
-                try:
-                    await countdown_module.delete_all_rules()
-                except Exception:  # pragma: no cover - best-effort cleanup
-                    pass
-
-                await countdown_module.call(
-                    "add_rule",
-                    {
-                        "act": 1 if target_state else 0,
-                        "delay": timeout_seconds,
-                        "enable": 1,
-                        "name": "spriggler-safety",
-                    },
-                )
-                logger.debug(
-                    "Programmed countdown failsafe to switch %s in %s seconds",
-                    "on" if target_state else "off",
-                    timeout_seconds,
-                )
-                return
-            except Exception as exc:  # pragma: no cover - dependent on kasa implementation
-                logger.warning(
-                    "Failed to program countdown failsafe for outlet '%s': %s",
-                    self.outlet_name,
-                    exc,
-                )
+        if await self._program_countdown_failsafe(target_state, timeout_seconds):
+            return
 
         if hasattr(self._outlet, "set_timer"):
             try:
@@ -446,15 +502,7 @@ class KasaPowerbar:
 
         countdown_module = self._countdown_module()
         if countdown_module is not None:
-            try:
-                await countdown_module.delete_all_rules()
-                cleared = True
-            except Exception as exc:  # pragma: no cover - dependent on hardware support
-                logger.warning(
-                    "Failed to clear countdown failsafe for outlet '%s': %s",
-                    self.outlet_name,
-                    exc,
-                )
+            cleared = await self._clear_countdown_rules(countdown_module) or cleared
 
         if hasattr(self._outlet, "delete_timer"):
             try:
