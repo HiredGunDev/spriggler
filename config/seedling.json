@@ -133,12 +133,12 @@
         },
         "control": {
           "name": "seedling",
-          "outlet_name": "Heater"
-        },
-        "safety": {
-          "state": "off",
-          "timeout_minutes": 3,
-          "enforce": true
+          "outlet_name": "Heater",
+          "safety": {
+            "target_state": "off",
+            "timeout_minutes": 3,
+            "enforce": true
+          }
         }
       },
       {

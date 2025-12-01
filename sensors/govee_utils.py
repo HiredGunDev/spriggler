@@ -5,7 +5,7 @@ from typing import Callable, Dict, List, Optional
 
 from bleak import BleakScanner
 
-GOVEE_H5100_MANUFACTURER_ID = 0x88EC
+GOVEE_H5100_MANUFACTURER_ID = 0x0001
 
 _shared_bleak_scanner: Optional[BleakScanner] = None
 _shared_bleak_scanner_started: bool = False

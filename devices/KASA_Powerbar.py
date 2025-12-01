@@ -7,8 +7,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
 try:  # pragma: no cover - import is validated during unit tests
-    from kasa import Discover, Module, SmartStrip
-except ImportError as exc:  # pragma: no cover - surfaced during initialization
+    from kasa import Discover, Module
+except ImportError as exc:  # pragma: no cover
     raise ImportError(
         "The 'python-kasa' package is required to use the KASA_Powerbar device"
     ) from exc
@@ -42,10 +42,10 @@ def get_metadata() -> Dict[str, Any]:
 
 
 class KasaPowerbar:
-    """Interface to manage TP-Link KASA smart power strips."""
+    """Interface to manage a single outlet on a TP-Link KASA smart power strip."""
 
-    # Cache of SmartStrip instances keyed by IP address (or discovered name).
-    _strip_cache: Dict[str, SmartStrip] = {}
+    # Cache of device instances keyed by IP/name to reuse TCP sessions.
+    _device_cache: Dict[str, Any] = {}
 
     def __init__(self, config: Dict[str, Any]):
         self.id = config.get("id", "kasa_powerbar")
@@ -81,22 +81,20 @@ class KasaPowerbar:
         )
         self._safety_enforce: bool = bool(safety_config.get("enforce", True))
 
-        self._strip: Optional[SmartStrip] = None
-        self._outlet = None
+        self._device: Any = None       # IotStrip / Device
+        self._outlet: Any = None       # IotStripPlug / child device
         self.address: Optional[str] = None
         self._initialized = False
 
+    # ------------------------------------------------------------------
+    # Core plumbing
+    # ------------------------------------------------------------------
     def _cache_key(self) -> str:
         """Return a stable cache key for this power strip."""
-
         return self.ip_address or f"name::{self.device_name}"
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
     async def _discover_host(self) -> str:
         """Locate the power strip by its configured friendly name."""
-
         discovered = await Discover.discover()
         for host, device in discovered.items():
             alias = getattr(device, "alias", "")
@@ -112,15 +110,18 @@ class KasaPowerbar:
             raise RuntimeError("KASA_Powerbar has not been initialized")
 
     def _select_outlet(self) -> None:
-        assert self._strip is not None  # noqa: S101 - defensive assertion
+        """Bind self._outlet to the configured child alias."""
+        assert self._device is not None  # defensive
+
+        children = getattr(self._device, "children", [])
         candidates = [
             outlet
-            for outlet in getattr(self._strip, "children", [])
+            for outlet in children
             if getattr(outlet, "alias", "").lower() == self.outlet_name.lower()
         ]
 
         if not candidates:
-            available = [getattr(child, "alias", "") for child in self._strip.children]
+            available = [getattr(child, "alias", "") for child in children]
             raise ValueError(
                 f"Outlet '{self.outlet_name}' was not found. Available outlets: {available}"
             )
@@ -137,35 +138,28 @@ class KasaPowerbar:
             self.ip_address = await self._discover_host()
 
         cache_key = self._cache_key()
-        cached_strip = self._strip_cache.get(cache_key)
+        cached = self._device_cache.get(cache_key)
 
-        if cached_strip:
+        if cached is not None:
+            dev = cached
             logger.bind(component="device", device_id=self.id).info(
                 f"Reusing existing connection to KASA power strip at {self.ip_address} "
                 f"(outlet '{self.outlet_name}')"
             )
-
-            if hasattr(cached_strip, "protocol") and hasattr(cached_strip.protocol, "port"):
-                cached_strip.protocol.port = self.port
-
-            self._strip = cached_strip
-            self.address = getattr(cached_strip, "host", self.ip_address)
         else:
             logger.bind(component="device", device_id=self.id).info(
                 f"Connecting to KASA power strip at {self.ip_address} "
                 f"(outlet '{self.outlet_name}')"
             )
+            dev = await Discover.discover_single(self.ip_address)
+            # proto may exist; honor configured port if we can
+            if hasattr(dev, "protocol") and hasattr(dev.protocol, "port"):
+                dev.protocol.port = self.port
+            await dev.update()
+            self._device_cache[cache_key] = dev
 
-            strip = SmartStrip(self.ip_address)
-
-            if hasattr(strip, "protocol") and hasattr(strip.protocol, "port"):
-                strip.protocol.port = self.port
-
-            await strip.update()
-            self._strip_cache[cache_key] = strip
-            self._strip = strip
-            self.address = strip.host
-
+        self._device = dev
+        self.address = getattr(dev, "host", self.ip_address)
         self._select_outlet()
         self._initialized = True
 
@@ -175,7 +169,6 @@ class KasaPowerbar:
 
     def get_metadata(self) -> Dict[str, Any]:
         """Return descriptive metadata for the initialized outlet."""
-
         metadata: Dict[str, Any] = {
             "id": self.id,
             "what": self.what,
@@ -190,10 +183,10 @@ class KasaPowerbar:
             },
         }
 
-        if self._strip is not None:
+        if self._device is not None:
             metadata.update(
                 {
-                    "host": getattr(self._strip, "host", self.ip_address),
+                    "host": getattr(self._device, "host", self.ip_address),
                     "port": self.port,
                     "available_outlets": self._list_outlets(),
                 }
@@ -204,19 +197,17 @@ class KasaPowerbar:
         return metadata
 
     def _list_outlets(self) -> List[str]:
-        assert self._strip is not None  # noqa: S101 - defensive assertion
-        return [getattr(child, "alias", "") for child in getattr(self._strip, "children", [])]
+        assert self._device is not None  # defensive
+        return [getattr(child, "alias", "") for child in getattr(self._device, "children", [])]
 
     async def is_on(self) -> bool:
         """Return True when the configured outlet is powered on."""
-
         self._ensure_initialized()
         await self._outlet.update()
         return bool(getattr(self._outlet, "is_on", False))
 
     async def turn_on(self) -> None:
         """Turn on the configured outlet."""
-
         self._ensure_initialized()
         await self._outlet.turn_on()
         await self._apply_safety_programming(command_state=True)
@@ -224,27 +215,25 @@ class KasaPowerbar:
 
     async def turn_off(self) -> None:
         """Turn off the configured outlet."""
-
         self._ensure_initialized()
         await self._outlet.turn_off()
         await self._apply_safety_programming(command_state=False)
         logger.debug("Issued OFF command to %s", self.outlet_name)
 
     # ------------------------------------------------------------------
-    # Safety handling
+    # Safety configuration
     # ------------------------------------------------------------------
     def _resolve_safety_config(self, control: Dict[str, Any]) -> Dict[str, Any]:
         """Return outlet-specific safety configuration if present."""
 
-        if not isinstance(control, dict):
-            return {}
-
+        # 1) Per-outlet block under control.outlets
         outlet_specific = self._extract_outlet_config(control)
         if isinstance(outlet_specific, dict):
             safety = outlet_specific.get("safety")
             if isinstance(safety, dict):
                 return safety
 
+        # 2) control.safety, optionally with per-outlet overrides
         control_safety = control.get("safety")
         if isinstance(control_safety, dict):
             outlets_block = control_safety.get("outlets")
@@ -253,7 +242,7 @@ class KasaPowerbar:
                 return outlet_override
 
             if self.outlet_name in control_safety and isinstance(
-                control_safety.get(self.outlet_name), dict
+                    control_safety.get(self.outlet_name), dict
             ):
                 return control_safety[self.outlet_name]
 
@@ -272,8 +261,8 @@ class KasaPowerbar:
         if isinstance(outlets, list):
             for entry in outlets:
                 if (
-                    isinstance(entry, dict)
-                    and entry.get("outlet_name") == self.outlet_name
+                        isinstance(entry, dict)
+                        and entry.get("outlet_name") == self.outlet_name
                 ):
                     return entry
 
@@ -288,8 +277,8 @@ class KasaPowerbar:
         if isinstance(outlets_block, list):
             for entry in outlets_block:
                 if (
-                    isinstance(entry, dict)
-                    and entry.get("outlet_name") == self.outlet_name
+                        isinstance(entry, dict)
+                        and entry.get("outlet_name") == self.outlet_name
                 ):
                     return entry
 
@@ -297,7 +286,6 @@ class KasaPowerbar:
 
     def _safety_settings(self) -> Tuple[Optional[bool], Optional[int], bool]:
         """Return parsed safety target, timeout (seconds), and enforce flag."""
-
         if not self._safety_enforce:
             return None, None, False
 
@@ -307,13 +295,15 @@ class KasaPowerbar:
         normalized = str(self._safety_target_state).lower()
         if normalized not in {"on", "off"}:
             logger.warning(
-                "Invalid safety target_state '%s' - expected 'on' or 'off'", self._safety_target_state
+                "Invalid safety target_state '%s' - expected 'on' or 'off'",
+                self._safety_target_state,
             )
             return None, None, False
 
         if self._safety_timeout_minutes is None:
             logger.warning(
-                "Safety target configured without a timeout for outlet '%s'", self.outlet_name
+                "Safety target configured without a timeout for outlet '%s'",
+                self.outlet_name,
             )
             return None, None, False
 
@@ -322,82 +312,48 @@ class KasaPowerbar:
 
         return normalized == "on", int(self._safety_timeout_minutes * 60), True
 
+    # ------------------------------------------------------------------
+    # Countdown-based failsafe
+    # ------------------------------------------------------------------
     def _countdown_module(self):
         """Return the countdown module when exposed by the outlet."""
-
         modules = getattr(self._outlet, "modules", None)
         if not modules:
             return None
+        return modules.get(Module.IotCountdown)
 
-        candidates = [
-            getattr(Module, "IotCountdown", None),
-            getattr(Module, "CountDown", None),
-            getattr(Module, "IotCountDown", None),
-            "count_down",
-            "countdown",
-        ]
-
-        for key in candidates:
-            if key is None:
-                continue
-
-            try:
-                countdown = modules.get(key) if hasattr(modules, "get") else modules[key]
-            except Exception:  # pragma: no cover - defensive access for kasa implementations
-                continue
-
-            if countdown:
-                return countdown
-
-        return None
-
-    async def _clear_countdown_rules(self, countdown_module=None) -> bool:
+    async def _clear_countdown_rules(self) -> bool:
         """Clear countdown rules via low-level helper when available."""
-
-        module = countdown_module or self._countdown_module()
+        module = self._countdown_module()
         if module is None:
             return False
-
-        cleared = False
 
         if hasattr(self._outlet, "_query_helper"):
             try:
                 await self._outlet._query_helper("count_down", "delete_all_rules", {})
-                cleared = True
-            except Exception as exc:  # pragma: no cover - dependent on kasa implementation
+                logger.debug("Cleared countdown rules for outlet '%s'", self.outlet_name)
+                return True
+            except Exception as exc:  # pragma: no cover
                 logger.warning(
                     "Failed to clear countdown failsafe for outlet '%s': %s",
                     self.outlet_name,
                     exc,
                 )
-
-        if not cleared:
-            try:
-                await module.delete_all_rules()
-                cleared = True
-            except Exception as exc:  # pragma: no cover - dependent on kasa implementation
-                logger.warning(
-                    "Failed to clear countdown failsafe for outlet '%s': %s",
-                    self.outlet_name,
-                    exc,
-                )
-
-        return cleared
+        return False
 
     async def _program_countdown_failsafe(
-        self, target_state: bool, timeout_seconds: int
+            self, target_state: bool, timeout_seconds: int
     ) -> bool:
-        """Program the HS300 internal countdown timer using kasa's query helper."""
-
-        countdown_module = self._countdown_module()
-        if countdown_module is None:
+        """Program the HS300 internal countdown timer."""
+        module = self._countdown_module()
+        if module is None:
             return False
 
-        await self._clear_countdown_rules(countdown_module)
+        await self._clear_countdown_rules()
 
         params = {
             "delay": timeout_seconds,
-            "act": 1 if target_state else 0,
+            "act": 1 if target_state else 0,  # 1 = ON, 0 = OFF for plugs
             "enable": 1,
             "name": "spriggler_failsafe",
         }
@@ -411,121 +367,46 @@ class KasaPowerbar:
                     timeout_seconds,
                 )
                 return True
-            except Exception as exc:  # pragma: no cover - dependent on kasa implementation
+            except Exception as exc:  # pragma: no cover
                 logger.warning(
                     "Failed to program countdown failsafe for outlet '%s': %s",
                     self.outlet_name,
                     exc,
                 )
 
-        try:
-            await countdown_module.call("add_rule", params)
-            logger.debug(
-                "Programmed countdown failsafe to switch %s in %s seconds",
-                "on" if target_state else "off",
-                timeout_seconds,
-            )
-            return True
-        except Exception as exc:  # pragma: no cover - dependent on kasa implementation
-            logger.warning(
-                "Failed to program countdown failsafe for outlet '%s': %s",
-                self.outlet_name,
-                exc,
-            )
-            return False
+        return False
 
     async def _apply_safety_programming(self, command_state: bool) -> None:
-        """Program or clear safety timers based on configuration and hardware support."""
+        """
+        Program or clear safety timers based on configuration.
 
+        Logic:
+        - If safety disabled or invalid -> clear any prior failsafe.
+        - If the commanded state equals the safety fallback state -> clear any failsafe.
+        - Otherwise program a countdown that moves from command_state -> target_state.
+        """
         target_state, timeout_seconds, enforce = self._safety_settings()
 
         if not enforce or target_state is None or timeout_seconds is None:
             await self._clear_safety_programming()
             return
 
+        # If the requested state already matches the fallback state, no timer needed.
         if command_state == target_state:
-            # Requested state matches the safety fallback; nothing to enforce.
             await self._clear_safety_programming()
             return
 
+        # Try countdown-based failsafe; if it fails, log and leave outlet as-is.
         if await self._program_countdown_failsafe(target_state, timeout_seconds):
             return
 
-        if hasattr(self._outlet, "set_timer"):
-            try:
-                await self._outlet.set_timer(timeout_seconds, target_state)
-                logger.debug(
-                    "Programmed safety timer to switch %s in %s seconds",
-                    "on" if target_state else "off",
-                    timeout_seconds,
-                )
-                return
-            except Exception as exc:  # pragma: no cover - dependent on hardware support
-                logger.warning(
-                    "Failed to program safety timer for outlet '%s': %s",
-                    self.outlet_name,
-                    exc,
-                )
-
-        if hasattr(self._outlet, "add_schedule_rule"):
-            try:
-                await self._outlet.add_schedule_rule(
-                    {
-                        "enable": True,
-                        "start": timeout_seconds,
-                        "power_state": target_state,
-                        "type": "once",
-                    }
-                )
-                logger.debug(
-                    "Programmed safety schedule to switch %s in %s seconds",
-                    "on" if target_state else "off",
-                    timeout_seconds,
-                )
-                return
-            except Exception as exc:  # pragma: no cover - dependent on hardware support
-                logger.warning(
-                    "Failed to program safety schedule for outlet '%s': %s",
-                    self.outlet_name,
-                    exc,
-                )
-
         logger.warning(
-            "KASA outlet '%s' does not expose countdown, timer, or schedule controls; cannot enforce safety",
+            "KASA outlet '%s' does not expose a usable countdown failsafe; "
+            "safety cannot be enforced",
             self.outlet_name,
         )
 
     async def _clear_safety_programming(self) -> None:
-        """Attempt to clear any previously programmed safety timers or schedules."""
-
-        cleared = False
-
-        countdown_module = self._countdown_module()
-        if countdown_module is not None:
-            cleared = await self._clear_countdown_rules(countdown_module) or cleared
-
-        if hasattr(self._outlet, "delete_timer"):
-            try:
-                await self._outlet.delete_timer()
-                cleared = True
-            except Exception as exc:  # pragma: no cover - dependent on hardware support
-                logger.warning(
-                    "Failed to clear safety timer for outlet '%s': %s",
-                    self.outlet_name,
-                    exc,
-                )
-
-        if hasattr(self._outlet, "delete_schedule_rules"):
-            try:
-                await self._outlet.delete_schedule_rules()
-                cleared = True
-            except Exception as exc:  # pragma: no cover - dependent on hardware support
-                logger.warning(
-                    "Failed to clear safety schedule for outlet '%s': %s",
-                    self.outlet_name,
-                    exc,
-                )
-
-        if cleared:
+        """Attempt to clear any previously programmed safety timers."""
+        if await self._clear_countdown_rules():
             logger.debug("Cleared safety programming for outlet '%s'", self.outlet_name)
-
