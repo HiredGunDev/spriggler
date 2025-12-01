@@ -250,10 +250,6 @@ Devices are physical components (e.g., heaters, fans) that control environmental
         - Each effect includes:
             - `property` (string): The property affected by the device (e.g., `temperature`, `humidity`).
             - `type` (string): The type of effect (`increase`, `decrease`, `dynamic_effect`).
-    - `safety`: Default safety policy applied to devices unless overridden.
-        - `state` (string, required): Target state to enforce after the timeout. Must be `on` or `off`.
-        - `timeout_minutes` (number, required): How long to wait before applying the safety state.
-        - `enforce` (boolean, required): Whether to automatically enforce the policy.
 - **definitions** (required):
     - `id` (string, required): Unique device identifier.
     - `what` (string, required): What the device controls or modifies (e.g., `heater`, `fan`).
@@ -264,11 +260,11 @@ Devices are physical components (e.g., heaters, fans) that control environmental
         - **outlet_name** (string, optional): Name for the specific outlet on the device (for multi-outlet devices).
         - **ip_address** (string, optional): Direct IP address for TCP/IP connections (used if `name` is not provided).
         - **port** (integer, optional): Port number for direct connections (used if `name` is not provided).
+        - **safety** (object, optional): Safety policy applied by the controller. When provided, all fields are required.
+            - `target_state` (string): State to enforce (`on` or `off`).
+            - `timeout_minutes` (number): Minutes to wait before enforcing the policy.
+            - `enforce` (boolean): Apply the policy automatically when true.
     - `effects` (array, optional): Overrides default effects for the device.
-    - `safety` (object, optional): Safety policy for the device. When provided, all fields are required.
-        - `state` (string): Target state (`on` or `off`).
-        - `timeout_minutes` (number): Minutes to wait before enforcing the policy.
-        - `enforce` (boolean): Apply the policy automatically when true.
 
 ### TP-Link KASA Powerbar (`KASA_Powerbar`)
 
@@ -308,9 +304,9 @@ The `KASA_Powerbar` device driver controls individual outlets on TP-Link KASA sm
       "power": { "circuit": "circuit_grow1", "rating": 1500 },
       "control": {
         "name": "seedling",
-        "outlet_name": "Heater"
-      },
-      "safety": { "state": "off", "timeout_minutes": 45, "enforce": true }
+        "outlet_name": "Heater",
+        "safety": { "target_state": "off", "timeout_minutes": 45, "enforce": true }
+      }
     },
     {
       "id": "exhaust_fan_grow1",
@@ -333,9 +329,9 @@ The `KASA_Powerbar` device driver controls individual outlets on TP-Link KASA sm
       "power": { "circuit": "circuit_grow2", "rating": 100 },
       "control": {
         "ip_address": "192.168.1.15",
-        "port": 8888
-      },
-      "safety": { "state": "on", "timeout_minutes": 5, "enforce": true }
+        "port": 8888,
+        "safety": { "target_state": "on", "timeout_minutes": 5, "enforce": true }
+      }
     }
   ]
 }
@@ -343,8 +339,8 @@ The `KASA_Powerbar` device driver controls individual outlets on TP-Link KASA sm
 
 **Safety use cases**
 
-- Heaters can define `"safety": {"state": "off", "timeout_minutes": 45, "enforce": true}` to guarantee they turn off if they remain on for too long.
-- Illumination devices can use `"safety": {"state": "on", "timeout_minutes": 5, "enforce": true}` so lights re-enable themselves after a short outage or missed command.
+- Heaters can define `"safety": {"target_state": "off", "timeout_minutes": 45, "enforce": true}` inside their `control` block to guarantee they turn off if they remain on for too long.
+- Illumination devices can use `"safety": {"target_state": "on", "timeout_minutes": 5, "enforce": true}` so lights re-enable themselves after a short outage or missed command.
 
 ### VeSync Humidifier (`vesync_humidifier`)
 
