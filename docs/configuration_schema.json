@@ -166,16 +166,6 @@
                   "additionalProperties": false
                 }
               }
-            },
-            "safety": {
-              "type": "object",
-              "properties": {
-                "state": { "type": "string", "enum": ["on", "off"] },
-                "timeout_minutes": { "type": ["integer", "number"], "minimum": 0 },
-                "enforce": { "type": "boolean" }
-              },
-              "required": ["state", "timeout_minutes", "enforce"],
-              "additionalProperties": false
             }
           },
           "additionalProperties": false
@@ -206,7 +196,17 @@
                   "port": { "type": "integer", "minimum": 0 },
                   "email": { "type": "string", "format": "email" },
                   "password": { "type": "string" },
-                  "time_zone": { "type": "string" }
+                  "time_zone": { "type": "string" },
+                  "safety": {
+                    "type": "object",
+                    "properties": {
+                      "target_state": { "type": "string", "enum": ["on", "off"] },
+                      "timeout_minutes": { "type": ["integer", "number"], "minimum": 0 },
+                      "enforce": { "type": "boolean" }
+                    },
+                    "required": ["target_state", "timeout_minutes", "enforce"],
+                    "additionalProperties": false
+                  }
                 },
                 "additionalProperties": false
               },
@@ -221,16 +221,6 @@
                   "required": ["property", "type"],
                   "additionalProperties": false
                 }
-              },
-              "safety": {
-                "type": "object",
-                "properties": {
-                  "state": { "type": "string", "enum": ["on", "off"] },
-                  "timeout_minutes": { "type": ["integer", "number"], "minimum": 0 },
-                  "enforce": { "type": "boolean" }
-                },
-                "required": ["state", "timeout_minutes", "enforce"],
-                "additionalProperties": false
               }
             },
             "required": ["id", "what", "how", "control"],
