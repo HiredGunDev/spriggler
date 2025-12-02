@@ -25,38 +25,38 @@
         "properties": {
           "temperature": {
             "sensors": [
-              "temp_sensor_seedling"
+              "temp_sensor"
             ],
             "controllers": [
-              "heater_seedling",
-              "exhaust_fan_seedling"
+              "heater",
+              "exhaust_fan"
             ],
             "schedules": [
-              "day_seedling",
-              "night_seedling"
+              "day",
+              "night"
             ]
           },
           "humidity": {
             "sensors": [
-              "humidity_sensor_seedling"
+              "humidity_sensor"
             ],
             "controllers": [
-              "humidifier_seedling",
-              "exhaust_fan_seedling"
+              "humidifier",
+              "exhaust_fan"
             ],
             "schedules": [
-              "day_seedling",
-              "night_seedling"
+              "day",
+              "night"
             ]
           },
           "illumination": {
             "sensors": [],
             "controllers": [
-              "light_seedling"
+              "light"
             ],
             "schedules": [
-              "day_seedling",
-              "night_seedling"
+              "day",
+              "night"
             ]
           }
         }
@@ -66,7 +66,7 @@
   "sensors": {
     "definitions": [
       {
-        "id": "temp_sensor_seedling",
+        "id": "temp_sensor",
         "what": "temperature",
         "how": "Govee_H5100_temperature",
         "config": {
@@ -75,7 +75,7 @@
         }
       },
       {
-        "id": "humidity_sensor_seedling",
+        "id": "humidity_sensor",
         "what": "humidity",
         "how": "Govee_H5100_humidity",
         "config": {
@@ -124,7 +124,7 @@
     },
     "definitions": [
       {
-        "id": "heater_seedling",
+        "id": "heater",
         "what": "heater",
         "how": "KASA_Powerbar",
         "power": {
@@ -142,7 +142,7 @@
         }
       },
       {
-        "id": "humidifier_seedling",
+        "id": "humidifier",
         "what": "humidifier",
         "how": "vesync_humidifier",
         "power": {
@@ -157,7 +157,7 @@
         }
       },
       {
-        "id": "exhaust_fan_seedling",
+        "id": "exhaust_fan",
         "what": "exhaust_fan",
         "how": "KASA_Powerbar",
         "power": {
@@ -170,7 +170,7 @@
         }
       },
       {
-        "id": "light_seedling",
+        "id": "light",
         "what": "light",
         "how": "KASA_Powerbar",
         "power": {
@@ -198,7 +198,7 @@
   "schedules": {
     "definitions": [
       {
-        "id": "day_seedling",
+        "id": "day",
         "time_range": "06:00-22:00",
         "targets": {
           "temperature": {
@@ -213,7 +213,7 @@
         }
       },
       {
-        "id": "night_seedling",
+        "id": "night",
         "time_range": "22:00-06:00",
         "targets": {
           "temperature": {
@@ -235,9 +235,9 @@
     },
     "definitions": [
       {
-        "id": "high_temp_seedling",
+        "id": "high_temp",
         "condition": {
-          "sensor": "temp_sensor_seedling",
+          "sensor": "temp_sensor",
           "operator": ">",
           "value": 80
         },
@@ -245,9 +245,9 @@
         "severity": "critical"
       },
       {
-        "id": "high_humidity_seedling",
+        "id": "high_humidity",
         "condition": {
-          "sensor": "humidity_sensor_seedling",
+          "sensor": "humidity_sensor",
           "operator": ">",
           "value": 80
         },
