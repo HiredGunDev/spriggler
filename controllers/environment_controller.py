@@ -372,34 +372,29 @@ class EnvironmentController:
                 )
 
     def _determine_command(self, decision: str, effect: Mapping[str, object]) -> Optional[str]:
+        """
+        Convert a decision ('increase' / 'decrease' / 'stable') into a device command
+        using the effect's 'policy' mapping.
+
+        Assumptions (enforced by _validate_configuration):
+        - 'policy' exists and is a Mapping.
+        - It defines all required decisions ('increase', 'decrease', 'stable').
+        """
         policy = effect.get("policy")
-        if isinstance(policy, Mapping):
-            desired = str(policy.get(decision, "ignore")).lower()
+        # Under correct config this should never happen; _validate_configuration enforces it.
+        if not isinstance(policy, Mapping):
+            raise RuntimeError(
+                f"Effect for property '{effect.get('property')}' is missing a 'policy' mapping."
+            )
 
-            if desired == "on":
-                return "turn_on"
-            if desired == "off":
-                return "turn_off"
+        desired = str(policy[decision]).lower()  # safe: all decisions are required
 
-            return None
-
-        # Legacy fallback for configurations that still use "type" semantics.
-        effect_type = effect.get("type")
-        if decision == "stable":
+        if desired == "on":
+            return "turn_on"
+        if desired == "off":
             return "turn_off"
 
-        if decision == "increase":
-            if effect_type == "increase":
-                return "turn_on"
-            if effect_type == "decrease":
-                return "turn_off"
-
-        if decision == "decrease":
-            if effect_type == "decrease":
-                return "turn_on"
-            if effect_type == "increase":
-                return "turn_off"
-
+        # Anything else ('ignore', 'none', etc.) means "no command for this decision"
         return None
 
     async def _issue_command(
