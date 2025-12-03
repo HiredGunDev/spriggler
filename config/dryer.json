@@ -1,0 +1,269 @@
+{
+  "header": {
+    "signature": "SprigglerConfig",
+    "version": "1.0",
+    "name": "dryer",
+    "description": "Dryer environment for repurposed refrigerator",
+    "author": "spriggler",
+    "created": "2025-02-28T00:00:00Z",
+    "modified": "2025-02-28T00:00:00Z",
+    "upstream": {
+      "url": "https://spriggler.diy/api"
+    }
+  },
+  "environments": {
+    "defaults": {
+      "air": {
+        "source": "ambient",
+        "exhaust": "external"
+      }
+    },
+    "definitions": [
+      {
+        "id": "dryer",
+        "name": "Dryer Refrigerator",
+        "properties": {
+          "temperature": {
+            "sensors": [
+              "temp_sensor"
+            ],
+            "controllers": [
+              "refrigerator",
+              "dehumidifier",
+              "exhaust_fan"
+            ],
+            "schedules": [
+              "drying_cycle"
+            ]
+          },
+          "humidity": {
+            "sensors": [
+              "humidity_sensor"
+            ],
+            "controllers": [
+              "dehumidifier",
+              "exhaust_fan"
+            ],
+            "schedules": [
+              "drying_cycle"
+            ]
+          },
+          "circulation": {
+            "sensors": [],
+            "controllers": [
+              "circulation_fan"
+            ],
+            "schedules": [
+              "circulation_cycle"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "sensors": {
+    "definitions": [
+      {
+        "id": "temp_sensor",
+        "what": "temperature",
+        "how": "Govee_H5100_temperature",
+        "config": {
+          "identifier": "5247",
+          "refresh_rate": 30
+        }
+      },
+      {
+        "id": "humidity_sensor",
+        "what": "humidity",
+        "how": "Govee_H5100_humidity",
+        "config": {
+          "identifier": "5247",
+          "refresh_rate": 30
+        }
+      }
+    ]
+  },
+  "devices": {
+    "defaults": {
+      "power": {
+        "circuit": "dryer_circuit",
+        "rating": 1200
+      },
+      "effects": {
+        "refrigerator": [
+          {
+            "property": "temperature",
+            "policy": {
+              "increase": "off",
+              "stable": "off",
+              "decrease": "on"
+            }
+          }
+        ],
+        "dehumidifier": [
+          {
+            "property": "humidity",
+            "policy": {
+              "increase": "off",
+              "stable": "off",
+              "decrease": "on"
+            }
+          },
+          {
+            "property": "temperature",
+            "policy": {
+              "increase": "on",
+              "stable": "off",
+              "decrease": "off"
+            }
+          }
+        ],
+        "exhaust_fan": [
+          {
+            "property": "temperature",
+            "policy": {
+              "increase": "off",
+              "stable": "off",
+              "decrease": "on"
+            }
+          },
+          {
+            "property": "humidity",
+            "policy": {
+              "increase": "off",
+              "stable": "off",
+              "decrease": "on"
+            }
+          }
+        ],
+        "circulation_fan": [
+          {
+            "property": "circulation",
+            "policy": {
+              "increase": "on",
+              "stable": "on",
+              "decrease": "off"
+            }
+          }
+        ]
+      }
+    },
+    "definitions": [
+      {
+        "id": "refrigerator",
+        "what": "refrigerator",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "dryer_circuit",
+          "rating": 800
+        },
+        "control": {
+          "name": "dryer",
+          "outlet_name": "Refrigerator"
+        }
+      },
+      {
+        "id": "dehumidifier",
+        "what": "dehumidifier",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "dryer_circuit",
+          "rating": 700
+        },
+        "control": {
+          "name": "dryer",
+          "outlet_name": "Dehumidifier"
+        }
+      },
+      {
+        "id": "exhaust_fan",
+        "what": "exhaust_fan",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "dryer_circuit",
+          "rating": 300
+        },
+        "control": {
+          "name": "dryer",
+          "outlet_name": "Exhaust"
+        }
+      },
+      {
+        "id": "circulation_fan",
+        "what": "circulation",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "dryer_circuit",
+          "rating": 300
+        },
+        "control": {
+          "name": "dryer",
+          "outlet_name": "Circulation"
+        }
+      }
+    ]
+  },
+  "circuits": {
+    "defaults": {
+      "max_load": 1800
+    },
+    "definitions": [
+      {
+        "id": "dryer_circuit",
+        "name": "15A Circuit for Dryer"
+      }
+    ]
+  },
+  "schedules": {
+    "definitions": [
+      {
+        "id": "drying_cycle",
+        "time_range": "00:00-23:59",
+        "targets": {
+          "temperature": {
+            "min": 60,
+            "max": 65
+          },
+          "humidity": {
+            "min": 45,
+            "max": 55
+          }
+        }
+      },
+      {
+        "id": "circulation_cycle",
+        "time_range": "00:00-23:59",
+        "targets": {
+          "circulation": "on"
+        }
+      }
+    ]
+  },
+  "alerts": {
+    "defaults": {
+      "severity": "warning"
+    },
+    "definitions": [
+      {
+        "id": "high_temp",
+        "condition": {
+          "sensor": "temp_sensor",
+          "operator": ">",
+          "value": 70
+        },
+        "message": "Dryer temperature exceeds 70F.",
+        "severity": "critical"
+      },
+      {
+        "id": "high_humidity",
+        "condition": {
+          "sensor": "humidity_sensor",
+          "operator": ">",
+          "value": 60
+        },
+        "message": "Dryer humidity exceeds 60%.",
+        "severity": "warning"
+      }
+    ]
+  }
+}
