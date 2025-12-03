@@ -37,7 +37,7 @@ async def ensure_power_state_async(
 
     if pre_state is not None and pre_state == desired_state:
         bound_logger.debug(
-            "No-op for '%s': already %s", device_label, _state_label(desired_state)
+            "No-op for '{}': already {}", device_label, _state_label(desired_state)
         )
         return PowerCommandResult(command_sent=False, final_state=pre_state)
 
@@ -69,7 +69,7 @@ def ensure_power_state(
 
     if pre_state is not None and pre_state == desired_state:
         bound_logger.debug(
-            "No-op for '%s': already %s", device_label, _state_label(desired_state)
+            "No-op for '{}': already {}", device_label, _state_label(desired_state)
         )
         return PowerCommandResult(command_sent=False, final_state=pre_state)
 
@@ -103,7 +103,7 @@ async def _read_state_async(
         return bool(state) if state is not None else None
     except Exception as exc:  # pragma: no cover - defensive logging
         bound_logger.warning(
-            "Unable to read power state for '%s' before command: %s", device_label, exc
+            "Unable to read power state for '{}' before command: {}", device_label, exc
         )
         return None
 
@@ -119,7 +119,7 @@ def _read_state_sync(
         return bool(state) if state is not None else None
     except Exception as exc:  # pragma: no cover - defensive logging
         bound_logger.warning(
-            "Unable to read power state for '%s' before command: %s", device_label, exc
+            "Unable to read power state for '{}' before command: {}", device_label, exc
         )
         return None
 
@@ -141,7 +141,7 @@ async def _verify_state_async(
             post_state = await post_state
     except Exception as exc:  # pragma: no cover - defensive logging
         bound_logger.error(
-            "Verification failed for '%s' after requesting %s: %s",
+            "Verification failed for '{}' after requesting {}: {}",
             device_label,
             _state_label(desired_state),
             exc,
@@ -174,7 +174,7 @@ def _verify_state_sync(
         post_state = read_state()
     except Exception as exc:  # pragma: no cover - defensive logging
         bound_logger.error(
-            "Verification failed for '%s' after requesting %s: %s",
+            "Verification failed for '{}' after requesting {}: {}",
             device_label,
             _state_label(desired_state),
             exc,
@@ -205,7 +205,7 @@ def _log_post_state(
 
     if post_state != desired_state:
         bound_logger.error(
-            "Device '%s' did not reach desired state %s (actual: %s)",
+            "Device '{}' did not reach desired state {} (actual: {})",
             device_label,
             _state_label(desired_state),
             _state_label(post_state),
@@ -214,12 +214,12 @@ def _log_post_state(
 
     if pre_state is not None and post_state != pre_state:
         bound_logger.info(
-            "Power state changed for '%s': %s -> %s",
+            "Power state changed for '{}': {} -> {}",
             device_label,
             _state_label(pre_state),
             _state_label(post_state),
         )
     else:
         bound_logger.debug(
-            "Power state for '%s' reported as %s", device_label, _state_label(post_state)
+            "Power state for '{}' reported as {}", device_label, _state_label(post_state)
         )
