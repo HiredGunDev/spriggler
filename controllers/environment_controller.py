@@ -411,6 +411,8 @@ class EnvironmentController:
         now = time.monotonic()
         history_key = (device_id, property_name)
         last_action, last_time = self._last_commands.get(history_key, (None, 0))
+
+        # Debounce and state-refresh behavior based on last command of this type
         if last_action == command:
             if now - last_time < self.debounce_seconds:
                 self._log(
@@ -451,18 +453,6 @@ class EnvironmentController:
                 entity=environment_id,
             )
             return False
-
-        if command in {"turn_on", "turn_off"}:
-            desired_state = command == "turn_on"
-            current_state = await self._device_power_state(
-                device=device,
-                device_id=device_id,
-                environment_id=environment_id,
-            )
-
-            if current_state is not None and current_state == desired_state:
-                self._last_commands[history_key] = (command, now)
-                return False
 
         summary = (
             f"{command} {device_id} for {property_name} in {environment_id} "
