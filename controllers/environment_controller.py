@@ -9,6 +9,8 @@ from typing import Dict, Iterable, List, Mapping, Optional
 
 from loguru import logger
 
+from devices.power_state import PowerCommandResult
+
 
 class EnvironmentController:
     """Decide how actuators should respond to current sensor readings."""
@@ -458,6 +460,7 @@ class EnvironmentController:
             f"{command} {device_id} for {property_name} in {environment_id} "
             f"(value={property_value}, target={target_range})"
         )
+        desired_state_label = "on" if command == "turn_on" else "off"
 
         if self.dry_run:
             self._log(f"[dry-run] Would {summary}", level="INFO", entity=environment_id)
@@ -467,11 +470,28 @@ class EnvironmentController:
         try:
             result = command_fn()
             if isawaitable(result):
-                await result
+                result = await result
 
-            self._log(summary, level="INFO", entity=environment_id)
-            self._last_commands[history_key] = (command, now)
-            return True
+            command_sent = True
+            if isinstance(result, PowerCommandResult):
+                command_sent = result.command_sent
+            elif hasattr(result, "command_sent"):
+                command_sent = bool(getattr(result, "command_sent"))
+
+            if command_sent:
+                self._log(summary, level="INFO", entity=environment_id)
+                self._last_commands[history_key] = (command, now)
+            else:
+                self._log(
+                    (
+                        f"No-op: {device_id} already {desired_state_label} "
+                        f"for '{property_name}'"
+                    ),
+                    level="DEBUG",
+                    entity=environment_id,
+                )
+
+            return command_sent
         except Exception as exc:  # pragma: no cover - defensive logging
             self._log(
                 f"Failed to execute {command} on '{device_id}': {exc}",

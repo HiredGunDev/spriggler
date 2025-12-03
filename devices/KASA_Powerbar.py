@@ -13,6 +13,8 @@ except ImportError as exc:  # pragma: no cover
         "The 'python-kasa' package is required to use the KASA_Powerbar device"
     ) from exc
 
+from devices.power_state import PowerCommandResult, ensure_power_state_async
+
 
 DEFAULT_KASA_PORT = 9999
 
@@ -206,19 +208,35 @@ class KasaPowerbar:
         await self._outlet.update()
         return bool(getattr(self._outlet, "is_on", False))
 
-    async def turn_on(self) -> None:
-        """Turn on the configured outlet."""
+    async def _set_power_state(self, *, desired_state: bool) -> PowerCommandResult:
         self._ensure_initialized()
-        await self._outlet.turn_on()
-        await self._apply_safety_programming(command_state=True)
-        logger.debug("Issued ON command to %s", self.outlet_name)
 
-    async def turn_off(self) -> None:
+        async def _command() -> None:
+            if desired_state:
+                await self._outlet.turn_on()
+            else:
+                await self._outlet.turn_off()
+
+        result = await ensure_power_state_async(
+            desired_state=desired_state,
+            device_id=self.id,
+            device_label=self.outlet_name or self.id,
+            read_state=self.is_on,
+            command=_command,
+        )
+
+        await self._apply_safety_programming(command_state=desired_state)
+        return result
+
+    async def turn_on(self) -> PowerCommandResult:
+        """Turn on the configured outlet."""
+
+        return await self._set_power_state(desired_state=True)
+
+    async def turn_off(self) -> PowerCommandResult:
         """Turn off the configured outlet."""
-        self._ensure_initialized()
-        await self._outlet.turn_off()
-        await self._apply_safety_programming(command_state=False)
-        logger.debug("Issued OFF command to %s", self.outlet_name)
+
+        return await self._set_power_state(desired_state=False)
 
     # ------------------------------------------------------------------
     # Safety configuration

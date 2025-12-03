@@ -9,6 +9,8 @@ from itertools import chain
 from loguru import logger
 from pyvesync import VeSync
 
+from devices.power_state import PowerCommandResult, ensure_power_state
+
 
 def get_metadata() -> Dict[str, Any]:
     """Return module metadata used by dynamic documentation helpers."""
@@ -198,12 +200,27 @@ class VesyncHumidifier:
 
         return metadata
 
-    def turn_on(self) -> None:
+    def _set_power_state(self, *, desired_state: bool) -> PowerCommandResult:
+        self._ensure_initialized()
+
+        def _command() -> None:
+            if desired_state:
+                self._device.turn_on()
+            else:
+                self._device.turn_off()
+
+        return ensure_power_state(
+            desired_state=desired_state,
+            device_id=self.id,
+            device_label=self.device_name or self.id,
+            read_state=self.is_on,
+            command=_command,
+        )
+
+    def turn_on(self) -> PowerCommandResult:
         """Turn on the humidifier."""
 
-        self._ensure_initialized()
-        self._device.turn_on()
-        logger.debug("Issued ON command to %s", self.device_name)
+        return self._set_power_state(desired_state=True)
 
     def is_on(self) -> bool:
         """Return True when the humidifier is running."""
@@ -220,9 +237,7 @@ class VesyncHumidifier:
 
         return bool(getattr(self._device, "is_on", False))
 
-    def turn_off(self) -> None:
+    def turn_off(self) -> PowerCommandResult:
         """Turn off the humidifier."""
 
-        self._ensure_initialized()
-        self._device.turn_off()
-        logger.debug("Issued OFF command to %s", self.device_name)
+        return self._set_power_state(desired_state=False)
