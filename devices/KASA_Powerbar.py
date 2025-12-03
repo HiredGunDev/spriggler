@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
@@ -348,9 +349,16 @@ class KasaPowerbar:
 
         if hasattr(self._outlet, "_query_helper"):
             try:
-                await self._outlet._query_helper("count_down", "delete_all_rules", {})
+                await asyncio.wait_for(
+                    self._outlet._query_helper("count_down", "delete_all_rules", {}),
+                    timeout=5,
+                )
                 logger.debug("Cleared countdown rules for outlet '%s'", self.outlet_name)
                 return True
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Timeout clearing countdown failsafe for outlet '%s'", self.outlet_name
+                )
             except Exception as exc:  # pragma: no cover
                 logger.warning(
                     "Failed to clear countdown failsafe for outlet '%s': %s",
@@ -360,7 +368,7 @@ class KasaPowerbar:
         return False
 
     async def _program_countdown_failsafe(
-            self, target_state: bool, timeout_seconds: int
+        self, target_state: bool, timeout_seconds: int
     ) -> bool:
         """Program the HS300 internal countdown timer."""
         module = self._countdown_module()
@@ -378,13 +386,21 @@ class KasaPowerbar:
 
         if hasattr(self._outlet, "_query_helper"):
             try:
-                await self._outlet._query_helper("count_down", "add_rule", params)
+                await asyncio.wait_for(
+                    self._outlet._query_helper("count_down", "add_rule", params),
+                    timeout=5,
+                )
                 logger.debug(
                     "Programmed countdown failsafe to switch %s in %s seconds",
                     "on" if target_state else "off",
                     timeout_seconds,
                 )
                 return True
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Timeout programming countdown failsafe for outlet '%s'",
+                    self.outlet_name,
+                )
             except Exception as exc:  # pragma: no cover
                 logger.warning(
                     "Failed to program countdown failsafe for outlet '%s': %s",
