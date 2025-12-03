@@ -41,10 +41,67 @@ class EnvironmentController:
         self._last_commands: Dict[tuple[str, str], tuple[str, float]] = {}
         self._last_property_logs: Dict[tuple[str, str], tuple[float, str, object, object]] = {}
         self._missing_reading_logs: Dict[tuple[str, str], float] = {}
+        self._validate_configuration()
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+    def _validate_configuration(self) -> None:
+        """
+        Validate that:
+        - Every controller device used by an environment/property has at least one effect.
+        - Each effect that applies to that property has a 'policy' mapping.
+        - Each policy defines all expected decisions: 'increase', 'decrease', 'stable'.
+        Fail fast if anything is missing.
+        """
+        required_decisions = {"increase", "decrease", "stable"}
+        errors: List[str] = []
+
+        for environment in self.environments:
+            env_id = environment.get("id", "environment")
+            properties = environment.get("properties", {})
+
+            for property_name, property_config in properties.items():
+                controllers = property_config.get("controllers", [])
+
+                for device_id in controllers:
+                    effects = self._device_effects(device_id)
+                    if not effects:
+                        errors.append(
+                            f"[{env_id}.{property_name}] Device '{device_id}' has no declared effects."
+                        )
+                        continue
+
+                    matching_effects = [
+                        effect for effect in effects if effect.get("property") == property_name
+                    ]
+                    if not matching_effects:
+                        errors.append(
+                            f"[{env_id}.{property_name}] Device '{device_id}' has effects, "
+                            f"but none for property '{property_name}'."
+                        )
+                        continue
+
+                    for effect in matching_effects:
+                        policy = effect.get("policy")
+                        if not isinstance(policy, Mapping):
+                            errors.append(
+                                f"[{env_id}.{property_name}] Device '{device_id}' effect for "
+                                f"'{property_name}' is missing a 'policy' mapping."
+                            )
+                            continue
+
+                        missing = required_decisions - set(policy.keys())
+                        if missing:
+                            errors.append(
+                                f"[{env_id}.{property_name}] Device '{device_id}' policy for "
+                                f"'{property_name}' missing decisions: {sorted(missing)}."
+                            )
+
+        if errors:
+            error_msg = "Invalid controller configuration:\n" + "\n".join(f"- {e}" for e in errors)
+            raise ValueError(error_msg)
+
     async def evaluate(
         self,
         *,
