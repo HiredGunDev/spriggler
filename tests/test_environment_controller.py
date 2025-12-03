@@ -47,7 +47,16 @@ def build_controller():
                 {
                     "id": "dev1",
                     "what": "mock",
-                    "effects": [{"property": "power", "type": "increase"}],
+                    "effects": [
+                        {
+                            "property": "power",
+                            "policy": {
+                                "increase": "on",
+                                "stable": "off",
+                                "decrease": "off",
+                            },
+                        }
+                    ],
                 }
             ],
             "defaults": {"effects": {}},

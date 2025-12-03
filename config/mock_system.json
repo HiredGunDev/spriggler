@@ -61,7 +61,11 @@
         "heater": [
           {
             "property": "temperature",
-            "type": "increase"
+            "policy": {
+              "increase": "on",
+              "stable": "off",
+              "decrease": "off"
+            }
           }
         ]
       }
@@ -82,7 +86,11 @@
         "effects": [
           {
             "property": "temperature",
-            "type": "increase"
+            "policy": {
+              "increase": "on",
+              "stable": "off",
+              "decrease": "off"
+            }
           }
         ]
       }

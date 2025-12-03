@@ -83,32 +83,52 @@
           "heater": [
             {
               "property": "temperature",
-              "type": "increase"
+              "policy": {
+                "increase": "on",
+                "stable": "off",
+                "decrease": "off"
+              }
             }
           ],
           "exhaust_fan": [
             {
               "property": "temperature",
-              "type": "decrease"
+              "policy": {
+                "increase": "off",
+                "stable": "off",
+                "decrease": "on"
+              }
             },
             {
               "property": "humidity",
-              "type": "decrease"
+              "policy": {
+                "increase": "off",
+                "stable": "off",
+                "decrease": "on"
+              }
             }
           ],
           "humidifier": [
             {
               "property": "humidity",
-            "type": "increase"
-          }
-        ],
-        "light": [
-          {
-            "property": "illumination",
-            "type": "state"
-          }
-        ]
-      }
+              "policy": {
+                "increase": "on",
+                "stable": "off",
+                "decrease": "off"
+              }
+            }
+          ],
+          "light": [
+            {
+              "property": "illumination",
+              "policy": {
+                "increase": "on",
+                "stable": "on",
+                "decrease": "off"
+              }
+            }
+          ]
+        }
     },
     "definitions": [
       {

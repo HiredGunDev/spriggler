@@ -249,7 +249,8 @@ Devices are physical components (e.g., heaters, fans) that control environmental
     - `effects`: Default effects for devices based on their `what` values.
         - Each effect includes:
             - `property` (string): The property affected by the device (e.g., `temperature`, `humidity`).
-            - `type` (string): The type of effect (`increase`, `decrease`, `state`).
+            - `policy` (object): Maps controller actions (`increase`, `stable`, `decrease`) to desired device commands.
+                - Allowed values: `on`, `off`, or `ignore`/`hold`.
           - `dynamic_effect` is a future enhancement and is not yet supported.
 - **definitions** (required):
     - `id` (string, required): Unique device identifier.
@@ -288,13 +289,34 @@ The `KASA_Powerbar` device driver controls individual outlets on TP-Link KASA sm
   "defaults": {
     "power": { "circuit": "default_circuit", "rating": 1500 },
     "effects": {
-      "heater": [{ "property": "temperature", "type": "increase" }],
-      "fan": [
-        { "property": "temperature", "type": "decrease" },
-        { "property": "humidity", "type": "decrease" }
+      "heater": [
+        {
+          "property": "temperature",
+          "policy": { "increase": "on", "stable": "off", "decrease": "off" }
+        }
       ],
-      "humidifier": [{ "property": "humidity", "type": "increase" }],
-      "light": [{ "property": "illumination", "type": "state" }]
+      "fan": [
+        {
+          "property": "temperature",
+          "policy": { "increase": "off", "stable": "off", "decrease": "on" }
+        },
+        {
+          "property": "humidity",
+          "policy": { "increase": "off", "stable": "off", "decrease": "on" }
+        }
+      ],
+      "humidifier": [
+        {
+          "property": "humidity",
+          "policy": { "increase": "on", "stable": "off", "decrease": "off" }
+        }
+      ],
+      "light": [
+        {
+          "property": "illumination",
+          "policy": { "increase": "on", "stable": "on", "decrease": "off" }
+        }
+      ]
     }
   },
   "definitions": [
@@ -319,8 +341,14 @@ The `KASA_Powerbar` device driver controls individual outlets on TP-Link KASA sm
         "outlet_name": "Fan"
       },
       "effects": [
-        { "property": "temperature", "type": "decrease" },
-        { "property": "humidity", "type": "decrease" }
+        {
+          "property": "temperature",
+          "policy": { "increase": "off", "stable": "off", "decrease": "on" }
+        },
+        {
+          "property": "humidity",
+          "policy": { "increase": "off", "stable": "off", "decrease": "on" }
+        }
       ]
     },
     {
