@@ -249,7 +249,8 @@ Devices are physical components (e.g., heaters, fans) that control environmental
     - `effects`: Default effects for devices based on their `what` values.
         - Each effect includes:
             - `property` (string): The property affected by the device (e.g., `temperature`, `humidity`).
-            - `type` (string): The type of effect (`increase`, `decrease`, `dynamic_effect`).
+            - `type` (string): The type of effect (`increase`, `decrease`, `state`).
+          - `dynamic_effect` is a future enhancement and is not yet supported.
 - **definitions** (required):
     - `id` (string, required): Unique device identifier.
     - `what` (string, required): What the device controls or modifies (e.g., `heater`, `fan`).
@@ -289,8 +290,8 @@ The `KASA_Powerbar` device driver controls individual outlets on TP-Link KASA sm
     "effects": {
       "heater": [{ "property": "temperature", "type": "increase" }],
       "fan": [
-        { "property": "temperature", "type": "dynamic_effect" },
-        { "property": "humidity", "type": "dynamic_effect" }
+        { "property": "temperature", "type": "decrease" },
+        { "property": "humidity", "type": "decrease" }
       ],
       "humidifier": [{ "property": "humidity", "type": "increase" }],
       "light": [{ "property": "illumination", "type": "state" }]
@@ -318,8 +319,8 @@ The `KASA_Powerbar` device driver controls individual outlets on TP-Link KASA sm
         "outlet_name": "Fan"
       },
       "effects": [
-        { "property": "temperature", "type": "dynamic_effect" },
-        { "property": "humidity", "type": "dynamic_effect" }
+        { "property": "temperature", "type": "decrease" },
+        { "property": "humidity", "type": "decrease" }
       ]
     },
     {
