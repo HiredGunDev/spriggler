@@ -70,7 +70,7 @@
           "identifier": "2650",
           "refresh_rate": 30
         }
-      },
+      }
     ]
   },
   "devices": {
@@ -79,56 +79,56 @@
         "circuit": "default_circuit",
         "rating": 400
       },
-        "effects": {
-          "heater": [
-            {
-              "property": "temperature",
-              "policy": {
-                "increase": "on",
-                "stable": "off",
-                "decrease": "off"
-              }
+      "effects": {
+        "heater": [
+          {
+            "property": "temperature",
+            "policy": {
+              "increase": "on",
+              "stable": "off",
+              "decrease": "off"
             }
-          ],
-          "exhaust_fan": [
-            {
-              "property": "temperature",
-              "policy": {
-                "increase": "off",
-                "stable": "off",
-                "decrease": "on"
-              }
-            },
-            {
-              "property": "humidity",
-              "policy": {
-                "increase": "off",
-                "stable": "off",
-                "decrease": "on"
-              }
+          }
+        ],
+        "exhaust_fan": [
+          {
+            "property": "temperature",
+            "policy": {
+              "increase": "off",
+              "stable": "off",
+              "decrease": "on"
             }
-          ],
-          "humidifier": [
-            {
-              "property": "humidity",
-              "policy": {
-                "increase": "on",
-                "stable": "off",
-                "decrease": "off"
-              }
+          },
+          {
+            "property": "humidity",
+            "policy": {
+              "increase": "off",
+              "stable": "off",
+              "decrease": "on"
             }
-          ],
-          "light": [
-            {
-              "property": "illumination",
-              "policy": {
-                "increase": "on",
-                "stable": "on",
-                "decrease": "off"
-              }
+          }
+        ],
+        "humidifier": [
+          {
+            "property": "humidity",
+            "policy": {
+              "increase": "on",
+              "stable": "off",
+              "decrease": "off"
             }
-          ]
-        }
+          }
+        ],
+        "light": [
+          {
+            "property": "illumination",
+            "policy": {
+              "increase": "on",
+              "stable": "on",
+              "decrease": "off"
+            }
+          }
+        ]
+      }
     },
     "definitions": [
       {
