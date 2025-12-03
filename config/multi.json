@@ -1,0 +1,486 @@
+{
+  "header": {
+    "signature": "SprigglerConfig",
+    "version": "1.0",
+    "name": "multi",
+    "description": "Combined seedling and dryer environments",
+    "author": "spriggler",
+    "created": "2025-03-02T00:00:00Z",
+    "modified": "2025-03-02T00:00:00Z",
+    "upstream": {
+      "url": "https://spriggler.spriggle.diy/api"
+    }
+  },
+  "environments": {
+    "defaults": {
+      "air": {
+        "source": "ambient",
+        "exhaust": "external"
+      }
+    },
+    "definitions": [
+      {
+        "id": "seedling",
+        "name": "Seedling Tent",
+        "properties": {
+          "temperature": {
+            "sensors": [
+              "temp_sensor"
+            ],
+            "controllers": [
+              "heater",
+              "exhaust_fan"
+            ],
+            "schedules": [
+              "day",
+              "night"
+            ]
+          },
+          "humidity": {
+            "sensors": [
+              "humidity_sensor"
+            ],
+            "controllers": [
+              "humidifier",
+              "exhaust_fan"
+            ],
+            "schedules": [
+              "day",
+              "night"
+            ]
+          },
+          "illumination": {
+            "sensors": [],
+            "controllers": [
+              "light"
+            ],
+            "schedules": [
+              "day",
+              "night"
+            ]
+          }
+        }
+      },
+      {
+        "id": "dryer",
+        "name": "Refrigerator Dryer",
+        "properties": {
+          "temperature": {
+            "sensors": [
+              "dryer_temp_sensor"
+            ],
+            "controllers": [
+              "refrigerator",
+              "dehumidifier",
+              "dryer_exhaust_fan"
+            ],
+            "schedules": [
+              "drying_cycle"
+            ]
+          },
+          "humidity": {
+            "sensors": [
+              "dryer_humidity_sensor"
+            ],
+            "controllers": [
+              "dehumidifier",
+              "dryer_exhaust_fan"
+            ],
+            "schedules": [
+              "drying_cycle"
+            ]
+          },
+          "circulation": {
+            "sensors": [],
+            "controllers": [
+              "circulation_fan"
+            ],
+            "schedules": [
+              "circulation_schedule"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "sensors": {
+    "definitions": [
+      {
+        "id": "temp_sensor",
+        "what": "temperature",
+        "how": "Govee_H5100_temperature",
+        "config": {
+          "identifier": "2650",
+          "refresh_rate": 30
+        }
+      },
+      {
+        "id": "humidity_sensor",
+        "what": "humidity",
+        "how": "Govee_H5100_humidity",
+        "config": {
+          "identifier": "2650",
+          "refresh_rate": 30
+        }
+      },
+      {
+        "id": "dryer_temp_sensor",
+        "what": "temperature",
+        "how": "Govee_H5100_temperature",
+        "config": {
+          "identifier": "5247",
+          "refresh_rate": 30
+        }
+      },
+      {
+        "id": "dryer_humidity_sensor",
+        "what": "humidity",
+        "how": "Govee_H5100_humidity",
+        "config": {
+          "identifier": "5247",
+          "refresh_rate": 30
+        }
+      }
+    ]
+  },
+  "devices": {
+    "defaults": {
+      "effects": {
+        "heater": [
+          {
+            "property": "temperature",
+            "policy": {
+              "increase": "on",
+              "stable": "off",
+              "decrease": "off"
+            }
+          }
+        ],
+        "exhaust_fan": [
+          {
+            "property": "temperature",
+            "policy": {
+              "increase": "off",
+              "stable": "off",
+              "decrease": "on"
+            }
+          },
+          {
+            "property": "humidity",
+            "policy": {
+              "increase": "off",
+              "stable": "off",
+              "decrease": "on"
+            }
+          }
+        ],
+        "humidifier": [
+          {
+            "property": "humidity",
+            "policy": {
+              "increase": "on",
+              "stable": "off",
+              "decrease": "off"
+            }
+          }
+        ],
+        "light": [
+          {
+            "property": "illumination",
+            "policy": {
+              "increase": "on",
+              "stable": "on",
+              "decrease": "off"
+            }
+          }
+        ],
+        "refrigerator": [
+          {
+            "property": "temperature",
+            "policy": {
+              "increase": "off",
+              "stable": "off",
+              "decrease": "on"
+            }
+          }
+        ],
+        "dehumidifier": [
+          {
+            "property": "humidity",
+            "policy": {
+              "increase": "off",
+              "stable": "off",
+              "decrease": "on"
+            }
+          },
+          {
+            "property": "temperature",
+            "policy": {
+              "increase": "on",
+              "stable": "off",
+              "decrease": "off"
+            }
+          }
+        ],
+        "dryer_exhaust_fan": [
+          {
+            "property": "temperature",
+            "policy": {
+              "increase": "off",
+              "stable": "off",
+              "decrease": "on"
+            }
+          },
+          {
+            "property": "humidity",
+            "policy": {
+              "increase": "off",
+              "stable": "off",
+              "decrease": "on"
+            }
+          }
+        ],
+        "circulation_fan": [
+          {
+            "property": "circulation",
+            "policy": {
+              "increase": "on",
+              "stable": "on",
+              "decrease": "off"
+            }
+          }
+        ]
+      }
+    },
+    "definitions": [
+      {
+        "id": "heater",
+        "what": "heater",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "seedling_circuit",
+          "rating": 1000
+        },
+        "control": {
+          "name": "seedling",
+          "outlet_name": "Heater",
+          "safety": {
+            "target_state": "off",
+            "timeout_minutes": 3,
+            "enforce": true
+          }
+        }
+      },
+      {
+        "id": "humidifier",
+        "what": "humidifier",
+        "how": "vesync_humidifier",
+        "power": {
+          "circuit": "seedling_circuit",
+          "rating": 500
+        },
+        "control": {
+          "name": "Dual 200S",
+          "email": "bill@hiredgun.dev",
+          "password": "Levoit5522t",
+          "time_zone": "America/New_York"
+        }
+      },
+      {
+        "id": "exhaust_fan",
+        "what": "exhaust_fan",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "seedling_circuit",
+          "rating": 200
+        },
+        "control": {
+          "name": "seedling",
+          "outlet_name": "Fan"
+        }
+      },
+      {
+        "id": "light",
+        "what": "light",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "seedling_circuit",
+          "rating": 200
+        },
+        "control": {
+          "name": "seedling",
+          "outlet_name": "Lights"
+        }
+      },
+      {
+        "id": "refrigerator",
+        "what": "refrigerator",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "dryer_circuit",
+          "rating": 800
+        },
+        "control": {
+          "name": "dryer",
+          "outlet_name": "refrigerator"
+        }
+      },
+      {
+        "id": "dehumidifier",
+        "what": "dehumidifier",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "dryer_circuit",
+          "rating": 700
+        },
+        "control": {
+          "name": "dryer",
+          "outlet_name": "dehumidifier"
+        }
+      },
+      {
+        "id": "dryer_exhaust_fan",
+        "what": "exhaust_fan",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "dryer_circuit",
+          "rating": 200
+        },
+        "control": {
+          "name": "dryer",
+          "outlet_name": "exhaust"
+        }
+      },
+      {
+        "id": "circulation_fan",
+        "what": "circulation_fan",
+        "how": "KASA_Powerbar",
+        "power": {
+          "circuit": "dryer_circuit",
+          "rating": 200
+        },
+        "control": {
+          "name": "dryer",
+          "outlet_name": "circulation"
+        }
+      }
+    ]
+  },
+  "circuits": {
+    "defaults": {
+      "max_load": 1800
+    },
+    "definitions": [
+      {
+        "id": "seedling_circuit",
+        "name": "15A Circuit for Seedling Tent"
+      },
+      {
+        "id": "dryer_circuit",
+        "name": "KASA Powerbar for Dryer"
+      }
+    ]
+  },
+  "schedules": {
+    "definitions": [
+      {
+        "id": "day",
+        "time_range": "06:00-22:00",
+        "targets": {
+          "temperature": {
+            "min": 70,
+            "max": 75
+          },
+          "humidity": {
+            "min": 60,
+            "max": 70
+          },
+          "illumination": "on"
+        }
+      },
+      {
+        "id": "night",
+        "time_range": "22:00-06:00",
+        "targets": {
+          "temperature": {
+            "min": 65,
+            "max": 70
+          },
+          "humidity": {
+            "min": 60,
+            "max": 70
+          },
+          "illumination": "off"
+        }
+      },
+      {
+        "id": "drying_cycle",
+        "time_range": "00:00-23:59",
+        "targets": {
+          "temperature": {
+            "min": 55,
+            "max": 65
+          },
+          "humidity": {
+            "min": 45,
+            "max": 55
+          }
+        }
+      },
+      {
+        "id": "circulation_schedule",
+        "time_range": "00:00-23:59",
+        "targets": {
+          "circulation": "on"
+        }
+      }
+    ]
+  },
+  "alerts": {
+    "defaults": {
+      "severity": "warning"
+    },
+    "definitions": [
+      {
+        "id": "high_temp",
+        "condition": {
+          "sensor": "temp_sensor",
+          "operator": ">",
+          "value": 80
+        },
+        "message": "Seedling tent temperature exceeds 80F.",
+        "severity": "critical"
+      },
+      {
+        "id": "high_humidity",
+        "condition": {
+          "sensor": "humidity_sensor",
+          "operator": ">",
+          "value": 80
+        },
+        "message": "Seedling tent humidity exceeds 80%.",
+        "severity": "warning"
+      },
+      {
+        "id": "high_temp_dryer",
+        "condition": {
+          "sensor": "dryer_temp_sensor",
+          "operator": ">",
+          "value": 70
+        },
+        "message": "Dryer temperature exceeds 70F.",
+        "severity": "warning"
+      },
+      {
+        "id": "high_humidity_dryer",
+        "condition": {
+          "sensor": "dryer_humidity_sensor",
+          "operator": ">",
+          "value": 60
+        },
+        "message": "Dryer humidity exceeds 60%.",
+        "severity": "warning"
+      }
+    ]
+  }
+}
