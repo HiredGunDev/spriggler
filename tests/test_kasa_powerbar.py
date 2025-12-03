@@ -9,19 +9,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import types
 
 dummy_kasa = types.ModuleType("kasa")
-dummy_kasa.Discover = types.SimpleNamespace(discover=None)
-dummy_kasa.Module = types.SimpleNamespace(IotCountdown="countdown", CountDown="count_down")
-
-
-class _PlaceholderStrip:
-    def __init__(self, *_, **__):  # pragma: no cover - replaced in tests
-        raise AssertionError("SmartStrip should be monkeypatched in tests")
-
-
-dummy_kasa.SmartStrip = _PlaceholderStrip
+dummy_kasa.Discover = types.SimpleNamespace(discover=None, discover_single=None)
+dummy_kasa.Module = types.SimpleNamespace(IotCountdown="iot_countdown")
 sys.modules.setdefault("kasa", dummy_kasa)
 
 from devices import KASA_Powerbar as kasa_module  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def clear_kasa_cache():
+    kasa_module.KasaPowerbar._device_cache.clear()
 
 
 class DummyOutlet:
@@ -37,11 +34,7 @@ class DummyOutlet:
         self.delete_schedule_calls = 0
         self.countdown_module = countdown_module or DummyCountdown()
         self.query_helper_calls = []
-        self.modules = modules or {
-            dummy_kasa.Module.IotCountdown: self.countdown_module,
-            "countdown": self.countdown_module,
-            "count_down": self.countdown_module,
-        }
+        self.modules = modules or {dummy_kasa.Module.IotCountdown: self.countdown_module}
 
     async def turn_on(self):  # pragma: no cover - exercised through wrapper
         await asyncio.sleep(0)
@@ -126,9 +119,9 @@ class DummyDiscoveredDevice:
 
 @pytest.fixture(autouse=True)
 def reset_kasa_cache():
-    kasa_module.KasaPowerbar._strip_cache.clear()
+    kasa_module.KasaPowerbar._device_cache.clear()
     yield
-    kasa_module.KasaPowerbar._strip_cache.clear()
+    kasa_module.KasaPowerbar._device_cache.clear()
 
 
 def test_initialize_with_discovery(monkeypatch):
@@ -136,7 +129,7 @@ def test_initialize_with_discovery(monkeypatch):
 
     created_instances = []
 
-    def mock_smart_strip(host):
+    async def mock_discover_single(host):
         strip = DummyStrip(host=host, outlets=[heater_outlet])
         created_instances.append(strip)
         return strip
@@ -145,7 +138,7 @@ def test_initialize_with_discovery(monkeypatch):
         await asyncio.sleep(0)
         return {"192.168.1.55": DummyDiscoveredDevice("Seedling Strip")}
 
-    monkeypatch.setattr(kasa_module, "SmartStrip", mock_smart_strip)
+    monkeypatch.setattr(kasa_module.Discover, "discover_single", mock_discover_single)
     monkeypatch.setattr(kasa_module.Discover, "discover", mock_discover)
 
     device = kasa_module.KasaPowerbar(
@@ -176,7 +169,7 @@ def test_initialize_with_static_ip(monkeypatch):
 
     created_instances = []
 
-    def mock_smart_strip(host):
+    async def mock_discover_single(host):
         strip = DummyStrip(host=host, outlets=[fan_outlet])
         created_instances.append(strip)
         return strip
@@ -184,7 +177,7 @@ def test_initialize_with_static_ip(monkeypatch):
     async def fail_discovery():  # pragma: no cover - ensures discovery is not invoked
         raise AssertionError("Discovery should not run when ip_address is provided")
 
-    monkeypatch.setattr(kasa_module, "SmartStrip", mock_smart_strip)
+    monkeypatch.setattr(kasa_module.Discover, "discover_single", mock_discover_single)
     monkeypatch.setattr(kasa_module.Discover, "discover", fail_discovery)
 
     device = kasa_module.KasaPowerbar(
@@ -207,14 +200,14 @@ def test_initialize_with_static_ip(monkeypatch):
 
 
 def test_missing_outlet_raises(monkeypatch):
-    def mock_smart_strip(host, port=9999):
+    async def mock_discover_single(host, port=9999):
         return DummyStrip(host=host, port=port, outlets=[DummyOutlet("Other")])
 
     async def mock_discover():
         await asyncio.sleep(0)
         return {"192.168.1.20": DummyDiscoveredDevice("Seedling Strip")}
 
-    monkeypatch.setattr(kasa_module, "SmartStrip", mock_smart_strip)
+    monkeypatch.setattr(kasa_module.Discover, "discover_single", mock_discover_single)
     monkeypatch.setattr(kasa_module.Discover, "discover", mock_discover)
 
     device = kasa_module.KasaPowerbar(
@@ -237,7 +230,7 @@ def test_reuses_cached_strip(monkeypatch):
 
     created_instances = []
 
-    def mock_smart_strip(host):
+    async def mock_discover_single(host):
         strip = DummyStrip(host=host, outlets=[heater_outlet, light_outlet])
         created_instances.append(strip)
         return strip
@@ -246,7 +239,7 @@ def test_reuses_cached_strip(monkeypatch):
         await asyncio.sleep(0)
         return {"192.168.1.55": DummyDiscoveredDevice("Seedling Strip")}
 
-    monkeypatch.setattr(kasa_module, "SmartStrip", mock_smart_strip)
+    monkeypatch.setattr(kasa_module.Discover, "discover_single", mock_discover_single)
     monkeypatch.setattr(kasa_module.Discover, "discover", mock_discover)
 
     heater_device = kasa_module.KasaPowerbar(
@@ -270,7 +263,7 @@ def test_reuses_cached_strip(monkeypatch):
     assert len(created_instances) == 1
     assert created_instances[0].update_calls == 1
     assert heater_device.address == light_device.address == "192.168.1.55"
-    assert heater_device._strip is light_device._strip  # noqa: SLF001 - intentional cache check
+    assert heater_device._device is light_device._device  # noqa: SLF001 - intentional cache check
 
 
 @pytest.mark.parametrize(
@@ -294,11 +287,11 @@ def test_outlet_specific_safety_precedence(monkeypatch):
 
     strip = DummyStrip(host="192.168.1.77", outlets=[heater_outlet, fan_outlet])
 
-    def mock_smart_strip(host):
+    async def mock_discover_single(host):
         assert host == "192.168.1.77"
         return strip
 
-    monkeypatch.setattr(kasa_module, "SmartStrip", mock_smart_strip)
+    monkeypatch.setattr(kasa_module.Discover, "discover_single", mock_discover_single)
 
     control_base = {
         "ip_address": "192.168.1.77",
@@ -352,10 +345,10 @@ def test_outlet_specific_safety_precedence(monkeypatch):
 def test_default_safety_used_when_no_outlet_override(monkeypatch):
     humidifier_outlet = DummyOutlet("Humidifier")
 
-    def mock_smart_strip(host):
+    async def mock_discover_single(host):
         return DummyStrip(host=host, outlets=[humidifier_outlet])
 
-    monkeypatch.setattr(kasa_module, "SmartStrip", mock_smart_strip)
+    monkeypatch.setattr(kasa_module.Discover, "discover_single", mock_discover_single)
 
     device = kasa_module.KasaPowerbar(
         {
@@ -383,14 +376,14 @@ def test_countdown_module_supports_count_down(monkeypatch):
     custom_countdown = DummyCountdown()
     outlet = DummyOutlet(
         "Heater",
-        modules={"count_down": custom_countdown},
+        modules={dummy_kasa.Module.IotCountdown: custom_countdown},
         countdown_module=custom_countdown,
     )
 
-    def mock_smart_strip(host):
+    async def mock_discover_single(host):
         return DummyStrip(host=host, outlets=[outlet])
 
-    monkeypatch.setattr(kasa_module, "SmartStrip", mock_smart_strip)
+    monkeypatch.setattr(kasa_module.Discover, "discover_single", mock_discover_single)
 
     device = kasa_module.KasaPowerbar(
         {
