@@ -300,7 +300,7 @@ class EnvironmentController:
                 if effect.get("property") != property_name:
                     continue
 
-                command = self._determine_command(decision, effect.get("type"))
+                command = self._determine_command(decision, effect)
                 if not command:
                     continue
 
@@ -314,7 +314,20 @@ class EnvironmentController:
                     target_range=target_range,
                 )
 
-    def _determine_command(self, decision: str, effect_type: Optional[str]) -> Optional[str]:
+    def _determine_command(self, decision: str, effect: Mapping[str, object]) -> Optional[str]:
+        policy = effect.get("policy")
+        if isinstance(policy, Mapping):
+            desired = str(policy.get(decision, "ignore")).lower()
+
+            if desired == "on":
+                return "turn_on"
+            if desired == "off":
+                return "turn_off"
+
+            return None
+
+        # Legacy fallback for configurations that still use "type" semantics.
+        effect_type = effect.get("type")
         if decision == "stable":
             return "turn_off"
 

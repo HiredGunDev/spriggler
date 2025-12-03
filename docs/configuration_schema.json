@@ -160,9 +160,17 @@
                   "type": "object",
                   "properties": {
                     "property": { "type": "string" },
+                      "policy": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string",
+                          "enum": ["on", "off", "hold", "ignore"]
+                        }
+                      },
                     "type": { "type": "string" }
                   },
-                  "required": ["property", "type"],
+                  "required": ["property"],
+                  "anyOf": [{"required": ["policy"]}, {"required": ["type"]}],
                   "additionalProperties": false
                 }
               }
@@ -216,9 +224,17 @@
                   "type": "object",
                   "properties": {
                     "property": { "type": "string" },
+                      "policy": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string",
+                          "enum": ["on", "off", "hold", "ignore"]
+                        }
+                      },
                     "type": { "type": "string" }
                   },
-                  "required": ["property", "type"],
+                  "required": ["property"],
+                  "anyOf": [{"required": ["policy"]}, {"required": ["type"]}],
                   "additionalProperties": false
                 }
               }
