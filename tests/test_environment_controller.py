@@ -2,10 +2,12 @@ import asyncio
 import time
 
 from controllers.environment_controller import EnvironmentController
+from devices.power_state import ensure_power_state
 
 
 class TrackingDevice:
     def __init__(self, *, initial_state: bool):
+        self.id = "tracking_device"
         self.is_on_state = initial_state
         self.turn_on_called = False
         self.turn_off_called = False
@@ -14,12 +16,30 @@ class TrackingDevice:
         return self.is_on_state
 
     def turn_on(self):
-        self.turn_on_called = True
-        self.is_on_state = True
+        def _command():
+            self.turn_on_called = True
+            self.is_on_state = True
+
+        return ensure_power_state(
+            desired_state=True,
+            device_id=self.id,
+            device_label=self.id,
+            read_state=self.is_on,
+            command=_command,
+        )
 
     def turn_off(self):
-        self.turn_off_called = True
-        self.is_on_state = False
+        def _command():
+            self.turn_off_called = True
+            self.is_on_state = False
+
+        return ensure_power_state(
+            desired_state=False,
+            device_id=self.id,
+            device_label=self.id,
+            read_state=self.is_on,
+            command=_command,
+        )
 
 
 def build_controller():

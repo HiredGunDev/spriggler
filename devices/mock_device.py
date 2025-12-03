@@ -1,5 +1,7 @@
 from loguru import logger
 
+from devices.power_state import PowerCommandResult, ensure_power_state
+
 
 class MockDevice:
     """Simple mock device used for integration testing."""
@@ -40,14 +42,30 @@ class MockDevice:
 
         return self._is_on
 
-    def turn_on(self) -> None:
+    def turn_on(self) -> PowerCommandResult:
         """Simulate powering on the device."""
 
-        self._is_on = True
-        logger.debug("Mock device %s turned on", self.id)
+        def _command() -> None:
+            self._is_on = True
 
-    def turn_off(self) -> None:
+        return ensure_power_state(
+            desired_state=True,
+            device_id=self.id,
+            device_label=self.name,
+            read_state=self.is_on,
+            command=_command,
+        )
+
+    def turn_off(self) -> PowerCommandResult:
         """Simulate powering off the device."""
 
-        self._is_on = False
-        logger.debug("Mock device %s turned off", self.id)
+        def _command() -> None:
+            self._is_on = False
+
+        return ensure_power_state(
+            desired_state=False,
+            device_id=self.id,
+            device_label=self.name,
+            read_state=self.is_on,
+            command=_command,
+        )
