@@ -91,26 +91,26 @@
         "circuit": "seedling_circuit",
         "rating": 800
       },
-      "effects": {
-        "heater": [
-          {
-            "property": "temperature",
-            "type": "increase"
-          }
-        ],
-        "exhaust_fan": [
-          {
-            "property": "temperature",
-            "type": "dynamic_effect"
-          },
-          {
-            "property": "humidity",
-            "type": "dynamic_effect"
-          }
-        ],
-        "humidifier": [
-          {
-            "property": "humidity",
+        "effects": {
+          "heater": [
+            {
+              "property": "temperature",
+              "type": "increase"
+            }
+          ],
+          "exhaust_fan": [
+            {
+              "property": "temperature",
+              "type": "decrease"
+            },
+            {
+              "property": "humidity",
+              "type": "decrease"
+            }
+          ],
+          "humidifier": [
+            {
+              "property": "humidity",
             "type": "increase"
           }
         ],
