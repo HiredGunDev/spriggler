@@ -50,14 +50,13 @@ class KasaPowerbar:
     _device_cache: Dict[str, Any] = {}
 
     def __init__(self, config: Dict[str, Any]):
-        self.id = config.get("id", "kasa_powerbar")
+        self.id = config["id"]
         self.what = config.get("what", "power_device")
         self._config = dict(config)
 
-        control = config.get("control") or {}
+        control = config["control"]
         if not control:
             raise ValueError("KASA_Powerbar requires a 'control' configuration block")
-
         self.device_name: Optional[str] = control.get("name")
         self.outlet_name: Optional[str] = control.get("outlet_name")
         self.ip_address: Optional[str] = control.get("ip_address") or config.get("address")
