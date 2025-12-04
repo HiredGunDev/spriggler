@@ -24,17 +24,16 @@ class EnvironmentController:
         state_refresh_seconds: float = 60.0,
         dry_run: bool = False,
     ) -> None:
-        self.environments = config.get("environments", {}).get("definitions", [])
+        self.environments = config["environments"]["definitions"]
         self.schedules = {
-            schedule.get("id"): schedule
-            for schedule in config.get("schedules", {}).get("definitions", [])
+            schedule["id"]: schedule for schedule in config["schedules"]["definitions"]
         }
         self.device_definitions = {
-            definition.get("id"): definition
-            for definition in config.get("devices", {}).get("definitions", [])
+            definition["id"]: definition
+            for definition in config["devices"]["definitions"]
         }
         self.device_effect_defaults = (
-            config.get("devices", {}).get("defaults", {}).get("effects", {})
+            config["devices"].get("defaults", {}).get("effects", {})
         )
         self.debounce_seconds = debounce_seconds
         self.state_refresh_seconds = state_refresh_seconds
@@ -43,67 +42,10 @@ class EnvironmentController:
         self._last_commands: Dict[tuple[str, str], tuple[str, float]] = {}
         self._last_property_logs: Dict[tuple[str, str], tuple[float, str, object, object]] = {}
         self._missing_reading_logs: Dict[tuple[str, str], float] = {}
-        self._validate_configuration()
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def _validate_configuration(self) -> None:
-        """
-        Validate that:
-        - Every controller device used by an environment/property has at least one effect.
-        - Each effect that applies to that property has a 'policy' mapping.
-        - Each policy defines all expected decisions: 'increase', 'decrease', 'stable'.
-        Fail fast if anything is missing.
-        """
-        required_decisions = {"increase", "decrease", "stable"}
-        errors: List[str] = []
-
-        for environment in self.environments:
-            env_id = environment.get("id", "environment")
-            properties = environment.get("properties", {})
-
-            for property_name, property_config in properties.items():
-                controllers = property_config.get("controllers", [])
-
-                for device_id in controllers:
-                    effects = self._device_effects(device_id)
-                    if not effects:
-                        errors.append(
-                            f"[{env_id}.{property_name}] Device '{device_id}' has no declared effects."
-                        )
-                        continue
-
-                    matching_effects = [
-                        effect for effect in effects if effect.get("property") == property_name
-                    ]
-                    if not matching_effects:
-                        errors.append(
-                            f"[{env_id}.{property_name}] Device '{device_id}' has effects, "
-                            f"but none for property '{property_name}'."
-                        )
-                        continue
-
-                    for effect in matching_effects:
-                        policy = effect.get("policy")
-                        if not isinstance(policy, Mapping):
-                            errors.append(
-                                f"[{env_id}.{property_name}] Device '{device_id}' effect for "
-                                f"'{property_name}' is missing a 'policy' mapping."
-                            )
-                            continue
-
-                        missing = required_decisions - set(policy.keys())
-                        if missing:
-                            errors.append(
-                                f"[{env_id}.{property_name}] Device '{device_id}' policy for "
-                                f"'{property_name}' missing decisions: {sorted(missing)}."
-                            )
-
-        if errors:
-            error_msg = "Invalid controller configuration:\n" + "\n".join(f"- {e}" for e in errors)
-            raise ValueError(error_msg)
-
     async def evaluate(
         self,
         *,
@@ -113,12 +55,12 @@ class EnvironmentController:
         """Evaluate environments and issue device commands when necessary."""
 
         for environment in self.environments:
-            environment_id = environment.get("id", "environment")
-            properties = environment.get("properties", {})
+            environment_id = environment["id"]
+            properties = environment["properties"]
 
             for property_name, property_config in properties.items():
                 schedule = self._select_schedule(
-                    property_name, property_config.get("schedules", [])
+                    property_name, property_config["schedules"]
                 )
                 if not schedule:
                     self._log(
@@ -128,10 +70,10 @@ class EnvironmentController:
                     )
                     continue
 
-                target_range = schedule.get("targets", {}).get(property_name)
-                if not target_range:
+                target_range = schedule["targets"].get(property_name)
+                if target_range is None:
                     self._log(
-                        f"Schedule '{schedule.get('id')}' missing targets for '{property_name}'",
+                        f"Schedule '{schedule['id']}' missing targets for '{property_name}'",
                         level="WARNING",
                         entity=environment_id,
                     )
@@ -154,13 +96,13 @@ class EnvironmentController:
                         environment_id=environment_id,
                         property_name=property_name,
                         desired_state=desired_state,
-                        controllers=property_config.get("controllers", []),
+                        controllers=property_config["controllers"],
                         devices=devices,
                     )
                     continue
 
                 property_value = self._aggregate_sensor_values(
-                    property_name, property_config.get("sensors", []), sensor_data
+                    property_name, property_config["sensors"], sensor_data
                 )
 
                 if property_value is None:
@@ -202,7 +144,7 @@ class EnvironmentController:
                     environment_id=environment_id,
                     property_name=property_name,
                     decision=decision,
-                    controllers=property_config.get("controllers", []),
+                    controllers=property_config["controllers"],
                     devices=devices,
                     target_range=target_range,
                     property_value=property_value,
@@ -377,19 +319,9 @@ class EnvironmentController:
         """
         Convert a decision ('increase' / 'decrease' / 'stable') into a device command
         using the effect's 'policy' mapping.
-
-        Assumptions (enforced by _validate_configuration):
-        - 'policy' exists and is a Mapping.
-        - It defines all required decisions ('increase', 'decrease', 'stable').
         """
-        policy = effect.get("policy")
-        # Under correct config this should never happen; _validate_configuration enforces it.
-        if not isinstance(policy, Mapping):
-            raise RuntimeError(
-                f"Effect for property '{effect.get('property')}' is missing a 'policy' mapping."
-            )
-
-        desired = str(policy[decision]).lower()  # safe: all decisions are required
+        policy = effect["policy"]
+        desired = str(policy[decision]).lower()
 
         if desired == "on":
             return "turn_on"
@@ -525,17 +457,16 @@ class EnvironmentController:
         return bool(state) if state is not None else None
 
     def _device_effects(self, device_id: str) -> List[Mapping[str, object]]:
-        definition = self.device_definitions.get(device_id, {})
-        effects = list(definition.get("effects", []) or [])
+        definition = self.device_definitions.get(device_id)
+        if not definition:
+            return []
 
+        effects = definition.get("effects") or []
         if effects:
-            return effects
+            return list(effects)
 
-        default_effects = self.device_effect_defaults.get(definition.get("what"))
-        if default_effects:
-            return list(default_effects)
-
-        return []
+        default_effects = self.device_effect_defaults.get(definition.get("what"), [])
+        return list(default_effects) if default_effects else []
 
     def _should_log_property_status(
         self,

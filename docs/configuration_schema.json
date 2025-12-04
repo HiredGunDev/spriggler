@@ -160,17 +160,19 @@
                   "type": "object",
                   "properties": {
                     "property": { "type": "string" },
-                      "policy": {
+                    "policy": {
                         "type": "object",
-                        "additionalProperties": {
-                          "type": "string",
-                          "enum": ["on", "off", "hold", "ignore"]
-                        }
+                        "properties": {
+                          "increase": {"type": "string", "enum": ["on", "off", "hold", "ignore"]},
+                          "decrease": {"type": "string", "enum": ["on", "off", "hold", "ignore"]},
+                          "stable": {"type": "string", "enum": ["on", "off", "hold", "ignore"]}
+                        },
+                        "required": ["increase", "decrease", "stable"],
+                        "additionalProperties": false
                       },
                     "type": { "type": "string" }
                   },
-                  "required": ["property"],
-                  "anyOf": [{"required": ["policy"]}, {"required": ["type"]}],
+                  "required": ["property", "policy"],
                   "additionalProperties": false
                 }
               }
@@ -224,17 +226,19 @@
                   "type": "object",
                   "properties": {
                     "property": { "type": "string" },
-                      "policy": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string",
-                          "enum": ["on", "off", "hold", "ignore"]
-                        }
+                    "policy": {
+                      "type": "object",
+                      "properties": {
+                        "increase": {"type": "string", "enum": ["on", "off", "hold", "ignore"]},
+                        "decrease": {"type": "string", "enum": ["on", "off", "hold", "ignore"]},
+                        "stable": {"type": "string", "enum": ["on", "off", "hold", "ignore"]}
                       },
+                      "required": ["increase", "decrease", "stable"],
+                      "additionalProperties": false
+                    },
                     "type": { "type": "string" }
                   },
-                  "required": ["property"],
-                  "anyOf": [{"required": ["policy"]}, {"required": ["type"]}],
+                  "required": ["property", "policy"],
                   "additionalProperties": false
                 }
               }

@@ -114,17 +114,17 @@ class Spriggler:
                 level="INFO",
                 component_type="system",
                 entity_name="configuration",
-            )
+        )
 
     async def initialize_devices(self):
         """Initialize devices using the device loader."""
-        device_definitions = self.config.get("devices", {}).get("definitions", [])
+        device_definitions = self.config["devices"]["definitions"]
         self.devices = load_devices(device_definitions)
 
         self._device_metadata.clear()
         self._devices_by_id.clear()
         for device, definition in zip(self.devices, device_definitions):
-            device_id = definition.get("id") or getattr(device, "id", "unknown")
+            device_id = definition["id"]
             initialize_method = getattr(device, "initialize", None)
             if callable(initialize_method):
                 if iscoroutinefunction(initialize_method):
@@ -141,7 +141,7 @@ class Spriggler:
                 metadata = {"id": device_id}
 
             metadata.setdefault("id", device_id)
-            metadata.setdefault("what", definition.get("what"))
+            metadata.setdefault("what", definition["what"])
             self._device_metadata[device_id] = metadata
             self._devices_by_id[device_id] = device
             self.log(
@@ -152,14 +152,14 @@ class Spriggler:
 
     async def initialize_sensors(self):
         """Initialize sensors using the sensor loader."""
-        sensor_definitions = self.config.get("sensors", {}).get("definitions", [])
+        sensor_definitions = self.config["sensors"]["definitions"]
         self.sensors = load_sensors(sensor_definitions)
 
         self._sensor_metadata.clear()
         self._sensor_metadata_by_id.clear()
         self._sensors_by_id.clear()
         for sensor, definition in zip(self.sensors, sensor_definitions):
-            configured_id = definition.get("id")
+            configured_id = definition["id"]
             hardware_id = getattr(sensor, "id", None)
             configured_id = configured_id or hardware_id or "unknown"
             initialize_method = getattr(sensor, "initialize", None)
@@ -187,7 +187,7 @@ class Spriggler:
             hardware_id = hardware_id or metadata.get("id")
             metadata["id"] = configured_id
             metadata.setdefault("hardware_id", hardware_id)
-            metadata.setdefault("what", definition.get("what"))
+            metadata.setdefault("what", definition["what"])
             self._sensor_metadata[sensor] = metadata
             self._sensor_metadata_by_id[configured_id] = metadata
             self._sensors_by_id[configured_id] = sensor
