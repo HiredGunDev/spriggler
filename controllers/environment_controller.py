@@ -41,6 +41,7 @@ class EnvironmentController:
         self._last_commands: Dict[tuple[str, str], tuple[str, float]] = {}
         self._last_property_logs: Dict[tuple[str, str], tuple[float, str, object, object]] = {}
         self._missing_reading_logs: Dict[tuple[str, str], float] = {}
+        self._commanded_states: Dict[str, tuple[bool, float]] = {}  # device_id -> (desired_state, timestamp)
 
     # ------------------------------------------------------------------
     # Public API
@@ -52,6 +53,9 @@ class EnvironmentController:
         devices: Mapping[str, object],
     ) -> None:
         """Evaluate environments and issue device commands when necessary."""
+
+        # Verify commanded states from previous cycle
+        await self._verify_commanded_states(devices)
 
         for environment in self.environments:
             environment_id = environment["id"]
@@ -217,6 +221,44 @@ class EnvironmentController:
     # ------------------------------------------------------------------
     # Command execution
     # ------------------------------------------------------------------
+    async def _verify_commanded_states(self, devices: Mapping[str, object]) -> None:
+        """Check that devices reached their commanded states from previous cycle."""
+        if not self._commanded_states:
+            return
+
+        for device_id, (desired_state, timestamp) in list(self._commanded_states.items()):
+            device = devices.get(device_id)
+            if not device:
+                continue
+
+            is_on_fn = getattr(device, "is_on", None)
+            if not callable(is_on_fn):
+                continue
+
+            try:
+                actual_state = await is_on_fn()
+            except Exception as exc:
+                self._log(
+                    f"Failed to read state for '{device_id}': {exc}",
+                    level="WARNING",
+                    entity="controller",
+                )
+                continue
+
+            if actual_state != desired_state:
+                desired_label = "on" if desired_state else "off"
+                actual_label = "on" if actual_state else "off"
+                self._log(
+                    f"Device '{device_id}' state mismatch: commanded {desired_label}, actual {actual_label}",
+                    level="WARNING",
+                    entity="controller",
+                )
+                # Clear the commanded state so normal control logic can re-command
+                del self._commanded_states[device_id]
+            else:
+                # State matches, clear tracking
+                del self._commanded_states[device_id]
+
     async def _apply_state_targets(
         self,
         *,
@@ -398,6 +440,9 @@ class EnvironmentController:
             if command_sent:
                 self._log(summary, level="INFO", entity=environment_id)
                 self._last_commands[history_key] = (command, now)
+                # Track for deferred verification
+                desired_state = command == "turn_on"
+                self._commanded_states[device_id] = (desired_state, now)
             else:
                 self._log(
                     f"No-op: {device_id} already {desired_state_label} for '{property_name}'",

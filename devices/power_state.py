@@ -2,6 +2,10 @@
 
 All device drivers must expose an async interface. This module provides
 a single async helper for power state management.
+
+Verification of commanded state is handled by the control loop on subsequent
+cycles, not immediately after command. This avoids race conditions with
+physical device latency.
 """
 
 from __future__ import annotations
@@ -19,8 +23,8 @@ class PowerCommandResult:
     command_sent: bool
     """True if a command was actually sent to the device."""
 
-    final_state: Optional[bool]
-    """The verified state after the command, or None if unreadable."""
+    desired_state: Optional[bool]
+    """The state we commanded, for tracking by the control loop."""
 
 
 async def ensure_power_state(
@@ -32,7 +36,10 @@ async def ensure_power_state(
     command: Callable[[], Awaitable[None]],
 ) -> PowerCommandResult:
     """
-    Apply an on/off command with pre-read and verification when supported.
+    Apply an on/off command with pre-read to avoid redundant commands.
+
+    Verification is deferred to the next control loop cycle to handle
+    physical device latency and manual interventions.
 
     Args:
         desired_state: True for on, False for off.
@@ -43,7 +50,7 @@ async def ensure_power_state(
         command: Async function that performs the actual power change.
 
     Returns:
-        PowerCommandResult with command_sent and final_state fields.
+        PowerCommandResult with command_sent and desired_state fields.
     """
     bound_logger = logger.bind(component="device", device_id=device_id)
 
@@ -53,19 +60,15 @@ async def ensure_power_state(
         bound_logger.debug(
             "No-op for '{}': already {}", device_label, _state_label(desired_state)
         )
-        return PowerCommandResult(command_sent=False, final_state=pre_state)
+        return PowerCommandResult(command_sent=False, desired_state=desired_state)
 
     await command()
 
-    post_state = await _verify_state(
-        read_state=read_state,
-        desired_state=desired_state,
-        bound_logger=bound_logger,
-        device_label=device_label,
-        pre_state=pre_state,
+    bound_logger.debug(
+        "Command sent to '{}': {}", device_label, _state_label(desired_state)
     )
 
-    return PowerCommandResult(command_sent=True, final_state=post_state)
+    return PowerCommandResult(command_sent=True, desired_state=desired_state)
 
 
 def _state_label(state: bool) -> str:
@@ -92,54 +95,3 @@ async def _read_state(
             exc,
         )
         return None
-
-
-async def _verify_state(
-    *,
-    read_state: Optional[Callable[[], Awaitable[bool]]],
-    desired_state: bool,
-    bound_logger,
-    device_label: str,
-    pre_state: Optional[bool],
-) -> Optional[bool]:
-    """Verify state after command and log appropriately."""
-    if read_state is None:
-        return None
-
-    try:
-        post_state = await read_state()
-        post_state = bool(post_state) if post_state is not None else None
-    except Exception as exc:
-        bound_logger.error(
-            "Verification failed for '{}' after requesting {}: {}",
-            device_label,
-            _state_label(desired_state),
-            exc,
-        )
-        return None
-
-    if post_state is None:
-        return None
-
-    if post_state != desired_state:
-        bound_logger.error(
-            "Device '{}' did not reach desired state {} (actual: {})",
-            device_label,
-            _state_label(desired_state),
-            _state_label(post_state),
-        )
-    elif pre_state is not None and post_state != pre_state:
-        bound_logger.info(
-            "Power state changed for '{}': {} -> {}",
-            device_label,
-            _state_label(pre_state),
-            _state_label(post_state),
-        )
-    else:
-        bound_logger.debug(
-            "Power state for '{}' reported as {}",
-            device_label,
-            _state_label(post_state),
-        )
-
-    return post_state
