@@ -1,10 +1,14 @@
-"""Control integration for VeSync-connected humidifiers."""
+"""Control integration for VeSync-connected humidifiers.
+
+The pyvesync library is synchronous, so this driver wraps all blocking
+calls with asyncio.to_thread() to conform to the async-first architecture.
+"""
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Optional
-
+import asyncio
 from itertools import chain
+from typing import Any, Dict, Iterable, Optional
 
 from loguru import logger
 from pyvesync import VeSync
@@ -64,6 +68,109 @@ class VesyncHumidifier:
         self._initialized = False
 
     # ------------------------------------------------------------------
+    # Sync helpers (called via to_thread)
+    # ------------------------------------------------------------------
+    def _sync_initialize(self) -> None:
+        """Synchronous initialization — runs in thread pool."""
+        self._manager = VeSync(
+            self.email,
+            self.password,
+            time_zone=self.time_zone or "America/New_York",
+        )
+
+        if not self._manager.login():
+            raise RuntimeError(f"VeSync login failed for account '{self.email}'")
+
+        self._select_device()
+        self._initialized = True
+
+        logger.bind(component="device", device_id=self.id).info(
+            f"VeSync humidifier '{self.device_name}' initialized successfully"
+        )
+
+    def _sync_is_on(self) -> bool:
+        """Synchronous state check — runs in thread pool."""
+        self._ensure_initialized()
+
+        update = getattr(self._device, "update", None)
+        if callable(update):
+            update()
+
+        status = getattr(self._device, "device_status", None)
+        if isinstance(status, str):
+            return status.lower() == "on"
+
+        return bool(getattr(self._device, "is_on", False))
+
+    def _sync_turn_on(self) -> None:
+        """Synchronous turn on — runs in thread pool."""
+        self._ensure_initialized()
+        self._device.turn_on()
+
+    def _sync_turn_off(self) -> None:
+        """Synchronous turn off — runs in thread pool."""
+        self._ensure_initialized()
+        self._device.turn_off()
+
+    # ------------------------------------------------------------------
+    # Async public interface
+    # ------------------------------------------------------------------
+    async def initialize(self) -> None:
+        """Authenticate with VeSync and locate the configured humidifier."""
+        await asyncio.to_thread(self._sync_initialize)
+
+    async def is_on(self) -> bool:
+        """Return True when the humidifier is running."""
+        return await asyncio.to_thread(self._sync_is_on)
+
+    async def turn_on(self) -> PowerCommandResult:
+        """Turn on the humidifier."""
+        return await ensure_power_state(
+            desired_state=True,
+            device_id=self.id,
+            device_label=self.device_name or self.id,
+            read_state=self.is_on,
+            command=self._async_turn_on,
+        )
+
+    async def turn_off(self) -> PowerCommandResult:
+        """Turn off the humidifier."""
+        return await ensure_power_state(
+            desired_state=False,
+            device_id=self.id,
+            device_label=self.device_name or self.id,
+            read_state=self.is_on,
+            command=self._async_turn_off,
+        )
+
+    async def _async_turn_on(self) -> None:
+        """Async wrapper for sync turn_on."""
+        await asyncio.to_thread(self._sync_turn_on)
+
+    async def _async_turn_off(self) -> None:
+        """Async wrapper for sync turn_off."""
+        await asyncio.to_thread(self._sync_turn_off)
+
+    def get_metadata(self) -> Dict[str, Any]:
+        """Return descriptive metadata for the humidifier."""
+        metadata: Dict[str, Any] = {
+            "id": self.id,
+            "what": self.what,
+            "name": self.device_name,
+            "circuit": self.circuit,
+            "power_rating": self.power_rating,
+        }
+
+        if self._device is not None:
+            metadata.update({
+                "device_name": getattr(self._device, "device_name", self.device_name),
+                "device_type": getattr(self._device, "device_type", None),
+                "device_uuid": getattr(self._device, "uuid", None),
+            })
+
+        return metadata
+
+    # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
     def _ensure_initialized(self) -> None:
@@ -72,7 +179,6 @@ class VesyncHumidifier:
 
     def _flatten_devices(self, dev_iterables: Iterable[Iterable[object]]) -> list[object]:
         """Return a flattened, deduplicated list of devices from iterables."""
-
         seen = set()
         devices: list[object] = []
 
@@ -80,7 +186,6 @@ class VesyncHumidifier:
             identifier = (getattr(device, "uuid", None), getattr(device, "cid", None))
             if identifier in seen:
                 continue
-
             seen.add(identifier)
             devices.append(device)
 
@@ -88,10 +193,8 @@ class VesyncHumidifier:
 
     def _candidate_devices(self) -> list[object]:
         """Return all devices reported by VeSync that could be humidifiers."""
+        assert self._manager is not None
 
-        assert self._manager is not None  # noqa: S101 - defensive assertion
-
-        # Standard humidifier lists exposed by pyvesync
         humidifiers = getattr(self._manager, "humidifiers", None)
         devices_mapping = getattr(self._manager, "devices", {})
 
@@ -101,17 +204,8 @@ class VesyncHumidifier:
                 devices_mapping.get("humidifier") or devices_mapping.get("humidifiers") or []
             )
 
-        # Some builds categorize devices differently (e.g., fans); search all
-        # known device collections for entries that smell like humidifiers.
         additional_lists = []
-        for attr in (
-            "fans",
-            "outlets",
-            "switches",
-            "bulbs",
-            "scales",
-            "motionsensors",
-        ):
+        for attr in ("fans", "outlets", "switches", "bulbs", "scales", "motionsensors"):
             devs = getattr(self._manager, attr, None)
             if devs:
                 additional_lists.append(devs)
@@ -138,7 +232,7 @@ class VesyncHumidifier:
         return humidifier_candidates or candidates
 
     def _select_device(self) -> None:
-        assert self._manager is not None  # noqa: S101 - defensive assertion
+        assert self._manager is not None
         self._manager.update()
 
         humidifiers = self._candidate_devices()
@@ -159,85 +253,3 @@ class VesyncHumidifier:
             )
 
         self._device = matches[0]
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-    def initialize(self) -> None:
-        """Authenticate with VeSync and locate the configured humidifier."""
-
-        self._manager = VeSync(self.email, self.password, time_zone=self.time_zone)
-
-        if not self._manager.login():
-            raise ValueError("Failed to log in to VeSync with the provided credentials")
-
-        self._select_device()
-        self._initialized = True
-
-        logger.bind(component="device", device_id=self.id).info(
-            f"VeSync humidifier '{self.device_name}' is ready for commands."
-        )
-
-    def get_metadata(self) -> Dict[str, Any]:
-        """Return descriptive metadata for the humidifier."""
-
-        metadata: Dict[str, Any] = {
-            "id": self.id,
-            "what": self.what,
-            "name": self.device_name,
-            "circuit": self.circuit,
-            "power_rating": self.power_rating,
-        }
-
-        if self._device is not None:
-            metadata.update(
-                {
-                    "device_name": getattr(self._device, "device_name", self.device_name),
-                    "device_type": getattr(self._device, "device_type", None),
-                    "device_uuid": getattr(self._device, "uuid", None),
-                }
-            )
-
-        return metadata
-
-    def _set_power_state(self, *, desired_state: bool) -> PowerCommandResult:
-        self._ensure_initialized()
-
-        def _command() -> None:
-            if desired_state:
-                self._device.turn_on()
-            else:
-                self._device.turn_off()
-
-        return ensure_power_state(
-            desired_state=desired_state,
-            device_id=self.id,
-            device_label=self.device_name or self.id,
-            read_state=self.is_on,
-            command=_command,
-        )
-
-    def turn_on(self) -> PowerCommandResult:
-        """Turn on the humidifier."""
-
-        return self._set_power_state(desired_state=True)
-
-    def is_on(self) -> bool:
-        """Return True when the humidifier is running."""
-
-        self._ensure_initialized()
-
-        update = getattr(self._device, "update", None)
-        if callable(update):
-            update()
-
-        status = getattr(self._device, "device_status", None)
-        if isinstance(status, str):
-            return status.lower() == "on"
-
-        return bool(getattr(self._device, "is_on", False))
-
-    def turn_off(self) -> PowerCommandResult:
-        """Turn off the humidifier."""
-
-        return self._set_power_state(desired_state=False)

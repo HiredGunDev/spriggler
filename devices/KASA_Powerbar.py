@@ -13,7 +13,7 @@ except ImportError as exc:  # pragma: no cover
         "The 'python-kasa' package is required to use the KASA_Powerbar device"
     ) from exc
 
-from devices.power_state import PowerCommandResult, ensure_power_state_async
+from devices.power_state import PowerCommandResult, ensure_power_state
 
 
 DEFAULT_KASA_PORT = 9999
@@ -216,7 +216,7 @@ class KasaPowerbar:
             else:
                 await self._outlet.turn_off()
 
-        result = await ensure_power_state_async(
+        result = await ensure_power_state(
             desired_state=desired_state,
             device_id=self.id,
             device_label=self.outlet_name or self.id,

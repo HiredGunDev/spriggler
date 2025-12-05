@@ -1,3 +1,8 @@
+"""Mock device for integration testing.
+
+Follows the async device contract.
+"""
+
 from loguru import logger
 
 from devices.power_state import PowerCommandResult, ensure_power_state
@@ -20,7 +25,8 @@ class MockDevice:
         self.timeout = config.get("timeout", 300)
         self._is_on = False
 
-    def initialize(self):
+    async def initialize(self):
+        """Initialize the mock device."""
         logger.bind(COMPONENT_TYPE="device", ENTITY_NAME=self.id).info(
             "Mock device ready on circuit '{}' using outlet '{}' ({}W).",
             self.circuit,
@@ -29,6 +35,7 @@ class MockDevice:
         )
 
     def get_metadata(self):
+        """Return device metadata."""
         return {
             "id": self.id,
             "what": self.what,
@@ -37,35 +44,34 @@ class MockDevice:
             "power_rating": self.power_rating,
         }
 
-    def is_on(self) -> bool:
+    async def is_on(self) -> bool:
         """Return True when the mock device is powered on."""
-
         return self._is_on
 
-    def turn_on(self) -> PowerCommandResult:
+    async def turn_on(self) -> PowerCommandResult:
         """Simulate powering on the device."""
-
-        def _command() -> None:
-            self._is_on = True
-
-        return ensure_power_state(
+        return await ensure_power_state(
             desired_state=True,
             device_id=self.id,
             device_label=self.name,
             read_state=self.is_on,
-            command=_command,
+            command=self._do_turn_on,
         )
 
-    def turn_off(self) -> PowerCommandResult:
+    async def turn_off(self) -> PowerCommandResult:
         """Simulate powering off the device."""
-
-        def _command() -> None:
-            self._is_on = False
-
-        return ensure_power_state(
+        return await ensure_power_state(
             desired_state=False,
             device_id=self.id,
             device_label=self.name,
             read_state=self.is_on,
-            command=_command,
+            command=self._do_turn_off,
         )
+
+    async def _do_turn_on(self) -> None:
+        """Perform the mock turn on."""
+        self._is_on = True
+
+    async def _do_turn_off(self) -> None:
+        """Perform the mock turn off."""
+        self._is_on = False
