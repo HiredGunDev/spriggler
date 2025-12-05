@@ -1,8 +1,10 @@
+import asyncio
 import pytest
 import types
 from loaders.sensor_loader import load_sensors
 
-# Mock sensor class for testing
+
+# Mock sensor class for testing (sync version for loader tests)
 class MockSensor:
     def __init__(self, config):
         self.id = config.get("id")
@@ -12,8 +14,9 @@ class MockSensor:
         self.refresh_rate = config.get("refresh_rate", 60)
         self.timeout = config.get("timeout", 300)
 
-    def read(self):
+    async def read(self):
         return {"temperature": 72.0, "humidity": 50.0}
+
 
 def test_load_valid_sensor(monkeypatch):
     """Test successful loading of a valid sensor."""
@@ -51,7 +54,7 @@ def test_load_valid_sensor(monkeypatch):
     assert sensor.address == "mock://address"
     assert sensor.refresh_rate == 60
     assert sensor.timeout == 300
-    assert sensor.read() == {"temperature": 72.0, "humidity": 50.0}
+    assert asyncio.run(sensor.read()) == {"temperature": 72.0, "humidity": 50.0}
 
 def test_missing_sensor_module(monkeypatch):
     """Test behavior when a sensor module is missing."""

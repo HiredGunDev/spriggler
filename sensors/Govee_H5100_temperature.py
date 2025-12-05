@@ -1,203 +1,35 @@
-from .govee_utils import (
-    GOVEE_H5100_MANUFACTURER_ID,
-    decode_h5100_manufacturer_data,
-    ensure_shared_bleak_scanner_running,
-    get_shared_bleak_scanner,
-    register_shared_detection_callback,
-    stop_shared_bleak_scanner,
-)
+"""Govee H5100 temperature sensor."""
+
+from typing import Any, Dict
+
+from .govee_utils import GoveeH5100Base
 
 
-class GoveeH5100Temperature:
-    """
-    A class to interface with the Govee H5100 BLE temperature sensor via advertisements.
-    """
+class GoveeH5100Temperature(GoveeH5100Base):
+    """Govee H5100 BLE sensor exposing temperature readings."""
 
-    BLE_MANUFACTURER_ID = GOVEE_H5100_MANUFACTURER_ID
-
-    def __init__(self, config: dict):
-        self.config = dict(config)
-        self.id = self.config.get("id")
-        self.identifier = self.config.get("identifier") or self.id  # Sensor address or name
-        self.normalized_identifier = self._normalize_identifier(self.identifier)
-        self.refresh_rate = self.config.get("refresh_rate", 30)  # Refresh rate in seconds
-        self.current_temperature = None  # Last retrieved temperature value
-        self.current_humidity = None  # Last retrieved humidity value
-        self.battery_level = None  # Last retrieved battery level
-        self.last_emitted_temperature = None
-        self.last_emitted_humidity = None
-        self.last_emitted_battery = None
-        self.suppressed_identical_advertisements = 0
-        self.has_logged_no_data = False
-        self.logger = None
-        self.scanner = None
-
-    async def initialize(self, spriggler_logger):
-        """Initialize the sensor with the Spriggler logging system."""
-        self.logger = spriggler_logger.bind(COMPONENT_TYPE="sensor", ENTITY_NAME=self.identifier)
-        self.logger.info(
-            "Govee5100Temperature sensor initialized.",
-            config=self.config,
-            normalized_identifier=self.normalized_identifier,
-        )
-        await self.start_scanning()
-
-    def handle_advertisement(self, device, advertisement_data):
-        """Process BLE advertisement data to extract sensor information."""
-        device_address = getattr(device, "address", None)
-        device_name = getattr(device, "name", None)
-        advertisement_name = getattr(advertisement_data, "local_name", None)
-
-        expected_signature = f"GVH5100_{self.identifier}" if self.identifier else None
-        matches_expected_signature = False
-        if expected_signature:
-            if any(
-                expected_signature.lower() in (value or "").lower()
-                for value in (advertisement_name, device_name)
-            ):
-                matches_expected_signature = True
-            else:
-                self.logger.debug(
-                    "Advertisement did not match expected signature; skipping",
-                    expected_signature=expected_signature,
-                    advertisement_name=advertisement_name,
-                    device_name=device_name,
-                )
-
-        if self.normalized_identifier and device is not None and not matches_expected_signature:
-            normalized_address = self._normalize_identifier(device_address)
-            normalized_name = self._normalize_identifier(device_name)
-
-            if not (
-                normalized_address == self.normalized_identifier
-                or normalized_name == self.normalized_identifier
-            ):
-                # Ignore advertisements from other Govee devices.
-                self.logger.debug(
-                    "Skipping advertisement due to identifier mismatch",
-                    configured_identifier=self.identifier,
-                    normalized_identifier=self.normalized_identifier,
-                    device_address=device_address,
-                    normalized_address=normalized_address,
-                    device_name=device_name,
-                    normalized_name=normalized_name,
-                )
-                return
-
-        manufacturer_data = None
-        if advertisement_data.manufacturer_data:
-            manufacturer_data = advertisement_data.manufacturer_data.get(self.BLE_MANUFACTURER_ID)
-
-            if manufacturer_data is None:
-                manufacturer_values = list(advertisement_data.manufacturer_data.values())
-                if manufacturer_values:
-                    manufacturer_data = manufacturer_values[0]
-
-        if not manufacturer_data:
-            self.logger.debug(
-                "No manufacturer payload available; skipping",
-                available_ids=list(advertisement_data.manufacturer_data.keys())
-                if advertisement_data.manufacturer_data
-                else [],
-            )
-            return
-
-        data = self.decode_manufacturer_data(manufacturer_data)
-        if data:
-            self.logger.debug("Decoded manufacturer data", decoded_payload=data)
-            self.current_temperature = data["temperature"] * 1.8 + 32  # Convert to Fahrenheit
-            self.current_humidity = data["humidity"]
-            self.battery_level = data["battery"]
-
-            # Reset no-data guard once the first valid reading is received.
-            self.has_logged_no_data = False
-
-            has_previous_reading = (
-                self.last_emitted_temperature is not None
-                and self.last_emitted_humidity is not None
-            )
-
-            if has_previous_reading and (
-                self.current_temperature == self.last_emitted_temperature
-                and self.current_humidity == self.last_emitted_humidity
-                and self.battery_level == self.last_emitted_battery
-            ):
-                self.suppressed_identical_advertisements += 1
-                return
-
-            suppressed = self.suppressed_identical_advertisements
-            self.suppressed_identical_advertisements = 0
-            self.last_emitted_temperature = self.current_temperature
-            self.last_emitted_humidity = self.current_humidity
-            self.last_emitted_battery = self.battery_level
-
-            self.logger.info(
-                (
-                    f"Temperature: {self.current_temperature:.2f}°F, "
-                    f"Humidity: {self.current_humidity:.2f}%, "
-                    f"Battery: {self.battery_level}% "
-                    f"(suppressed {suppressed} identical advertisements)"
-                )
-            )
-        else:
-            self.logger.warning("Failed to decode manufacturer data.")
-
-    async def start_scanning(self):
-        """Start scanning for BLE advertisements."""
-        if self.scanner is None:
-            self.scanner = get_shared_bleak_scanner()
-            self.logger.debug(
-                "Registering advertisement callback and acquiring shared BLE scanner",
-                scanner_id=id(self.scanner),
-            )
-            register_shared_detection_callback(self.handle_advertisement, logger=self.logger)
-        else:
-            self.logger.debug(
-                "Reusing existing shared BLE scanner for temperature sensor", scanner_id=id(self.scanner)
-            )
-        await ensure_shared_bleak_scanner_running(self.logger)
-
-    async def stop_scanning(self):
-        """Stop BLE scanning."""
-        if self.scanner:
-            self.logger.debug("Stopping BLE scanning for temperature sensor", scanner_id=id(self.scanner))
-            await stop_shared_bleak_scanner(self.logger)
-
-    async def read(self):
-        """Retrieve the most recent temperature and humidity values."""
-        if self.current_temperature is None or self.current_humidity is None:
-            if not self.has_logged_no_data:
-                self.logger.warning("No sensor data available yet.")
-                self.has_logged_no_data = True
-            return {"error": "No sensor data available"}
-        self.logger.debug(
-            "Returning latest sensor readings",
-            temperature_f=self.current_temperature,
-            humidity_percent=self.current_humidity,
-            battery_percent=self.battery_level,
-        )
+    def _extract_reading(self, decoded: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract temperature and battery from decoded data."""
         return {
-            "temperature": self.current_temperature,
-            "humidity": self.current_humidity,
-            "battery": self.battery_level,
+            "temperature": decoded.get("temperature"),
+            "humidity": decoded.get("humidity"),  # Include for cross-reference
+            "battery": decoded.get("battery"),
         }
 
-    @staticmethod
-    def decode_manufacturer_data(manufacturer_data):
-        """Decode manufacturer data for GVH5100 devices."""
-        return decode_h5100_manufacturer_data(manufacturer_data)
+    def _format_log_message(self, reading: Dict[str, Any], suppressed: int) -> str:
+        """Format temperature reading log message."""
+        temp = reading.get("temperature")
+        humidity = reading.get("humidity")
+        battery = reading.get("battery")
+        return (
+            f"Temperature: {temp:.2f}°F, "
+            f"Humidity: {humidity:.2f}%, "
+            f"Battery: {battery}% "
+            f"(suppressed {suppressed} identical advertisements)"
+        )
 
-    def get_metadata(self):
-        """Return metadata about the sensor."""
-        return {
-            "id": self.identifier,
-            "type": "temperature_sensor",
-            "protocol": "Govee_H5100_temperature",
-            "refresh_rate": self.refresh_rate,
-        }
+    def _get_sensor_type(self) -> str:
+        return "temperature_sensor"
 
-    @staticmethod
-    def _normalize_identifier(value):
-        if value is None:
-            return None
-        return value.lower().replace(":", "").replace("-", "").replace("_", "")
+    def _get_protocol_name(self) -> str:
+        return "Govee_H5100_temperature"

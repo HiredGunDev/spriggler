@@ -12,15 +12,15 @@ class TrackingDevice:
         self.turn_on_called = False
         self.turn_off_called = False
 
-    def is_on(self) -> bool:
+    async def is_on(self) -> bool:
         return self.is_on_state
 
-    def turn_on(self):
-        def _command():
+    async def turn_on(self):
+        async def _command():
             self.turn_on_called = True
             self.is_on_state = True
 
-        return ensure_power_state(
+        return await ensure_power_state(
             desired_state=True,
             device_id=self.id,
             device_label=self.id,
@@ -28,12 +28,12 @@ class TrackingDevice:
             command=_command,
         )
 
-    def turn_off(self):
-        def _command():
+    async def turn_off(self):
+        async def _command():
             self.turn_off_called = True
             self.is_on_state = False
 
-        return ensure_power_state(
+        return await ensure_power_state(
             desired_state=False,
             device_id=self.id,
             device_label=self.id,

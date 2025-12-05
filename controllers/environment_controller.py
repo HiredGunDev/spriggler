@@ -297,7 +297,7 @@ class EnvironmentController:
                 if effect.get("property") != property_name:
                     continue
 
-                command_issued = await self._issue_command(
+                await self._issue_command(
                     device_id=device_id,
                     devices=devices,
                     command=command,
@@ -306,13 +306,6 @@ class EnvironmentController:
                     property_value=desired_state,
                     target_range={"state": desired_state},
                 )
-
-                if command_issued:
-                    self._log(
-                        f"Setting {property_name} to {desired_state} via {command}",
-                        level="INFO",
-                        entity=environment_id,
-                    )
 
     async def _apply_device_commands(
         self,
