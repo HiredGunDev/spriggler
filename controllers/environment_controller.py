@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import datetime as _dt
 import time
-from inspect import isawaitable
 from typing import Dict, Iterable, List, Mapping, Optional
 
 from loguru import logger
@@ -83,10 +82,7 @@ class EnvironmentController:
                     desired_state = target_range.strip().lower()
                     if desired_state not in {"on", "off"}:
                         self._log(
-                            (
-                                f"Unsupported target '{target_range}' for property "
-                                f"'{property_name}'"
-                            ),
+                            f"Unsupported target '{target_range}' for property '{property_name}'",
                             level="WARNING",
                             entity=environment_id,
                         )
@@ -132,10 +128,8 @@ class EnvironmentController:
                     decision=decision,
                 ):
                     self._log(
-                        (
-                            f"{property_name} is {property_value}; "
-                            f"target min={target_range.get('min')} max={target_range.get('max')} -> {decision}"
-                        ),
+                        f"{property_name} is {property_value}; "
+                        f"target min={target_range.get('min')} max={target_range.get('max')} -> {decision}",
                         level="INFO",
                         entity=environment_id,
                     )
@@ -178,7 +172,7 @@ class EnvironmentController:
 
             try:
                 values.append(float(reading_value))
-            except (TypeError, ValueError):  # pragma: no cover - defensive casting
+            except (TypeError, ValueError):
                 self._log(
                     f"Sensor '{sensor_id}' returned non-numeric value for '{property_name}': {reading_value}",
                     level="WARNING",
@@ -220,6 +214,9 @@ class EnvironmentController:
             return "decrease"
         return "stable"
 
+    # ------------------------------------------------------------------
+    # Command execution
+    # ------------------------------------------------------------------
     async def _apply_state_targets(
         self,
         *,
@@ -230,6 +227,7 @@ class EnvironmentController:
         devices: Mapping[str, object],
     ) -> None:
         command = "turn_on" if desired_state == "on" else "turn_off"
+
         for device_id in controllers:
             history_key = (device_id, property_name)
             last_action, last_time = self._last_commands.get(history_key, (None, 0))
@@ -237,10 +235,8 @@ class EnvironmentController:
 
             if last_action == command and now - last_time < self.state_refresh_seconds:
                 self._log(
-                    (
-                        f"No state change for '{device_id}' controlling '{property_name}'; "
-                        f"last {command} sent {now - last_time:.1f}s ago"
-                    ),
+                    f"No state change for '{device_id}' controlling '{property_name}'; "
+                    f"last {command} sent {now - last_time:.1f}s ago",
                     level="DEBUG",
                     entity=environment_id,
                 )
@@ -316,10 +312,7 @@ class EnvironmentController:
                 )
 
     def _determine_command(self, decision: str, effect: Mapping[str, object]) -> Optional[str]:
-        """
-        Convert a decision ('increase' / 'decrease' / 'stable') into a device command
-        using the effect's 'policy' mapping.
-        """
+        """Convert decision to device command using effect policy."""
         policy = effect["policy"]
         desired = str(policy[decision]).lower()
 
@@ -328,7 +321,6 @@ class EnvironmentController:
         if desired == "off":
             return "turn_off"
 
-        # Anything else ('ignore', 'none', etc.) means "no command for this decision"
         return None
 
     async def _issue_command(
@@ -346,14 +338,11 @@ class EnvironmentController:
         history_key = (device_id, property_name)
         last_action, last_time = self._last_commands.get(history_key, (None, 0))
 
-        # Debounce and state-refresh behavior based on last command of this type
         if last_action == command:
             if now - last_time < self.debounce_seconds:
                 self._log(
-                    (
-                        f"Skipping {command} for '{device_id}' controlling '{property_name}' "
-                        f"due to debounce window ({self.debounce_seconds}s)"
-                    ),
+                    f"Skipping {command} for '{device_id}' controlling '{property_name}' "
+                    f"due to debounce window ({self.debounce_seconds}s)",
                     level="DEBUG",
                     entity=environment_id,
                 )
@@ -361,10 +350,8 @@ class EnvironmentController:
 
             if now - last_time < self.state_refresh_seconds:
                 self._log(
-                    (
-                        f"No state change for '{device_id}' controlling '{property_name}'; "
-                        f"last {command} sent {now - last_time:.1f}s ago"
-                    ),
+                    f"No state change for '{device_id}' controlling '{property_name}'; "
+                    f"last {command} sent {now - last_time:.1f}s ago",
                     level="DEBUG",
                     entity=environment_id,
                 )
@@ -373,7 +360,7 @@ class EnvironmentController:
         device = devices.get(device_id)
         if not device:
             self._log(
-                f"Device '{device_id}' not found in registry; cannot send {command}.",
+                f"Device '{device_id}' not found; cannot send {command}.",
                 level="ERROR",
                 entity=environment_id,
             )
@@ -389,7 +376,7 @@ class EnvironmentController:
             return False
 
         summary = (
-            f"{command} {device_id} for {property_name} in {environment_id} "
+            f"{command} {device_id} for {property_name} "
             f"(value={property_value}, target={target_range})"
         )
         desired_state_label = "on" if command == "turn_on" else "off"
@@ -400,9 +387,7 @@ class EnvironmentController:
             return True
 
         try:
-            result = command_fn()
-            if isawaitable(result):
-                result = await result
+            result = await command_fn()
 
             command_sent = True
             if isinstance(result, PowerCommandResult):
@@ -415,47 +400,24 @@ class EnvironmentController:
                 self._last_commands[history_key] = (command, now)
             else:
                 self._log(
-                    (
-                        f"No-op: {device_id} already {desired_state_label} "
-                        f"for '{property_name}'"
-                    ),
+                    f"No-op: {device_id} already {desired_state_label} for '{property_name}'",
                     level="DEBUG",
                     entity=environment_id,
                 )
 
             return command_sent
-        except Exception as exc:  # pragma: no cover - defensive logging
+
+        except Exception as exc:
             self._log(
                 f"Failed to execute {command} on '{device_id}': {exc}",
                 level="ERROR",
                 entity=environment_id,
             )
+            return False
 
-        return False
-
-    async def _device_power_state(
-        self, *, device: object, device_id: str, environment_id: str
-    ) -> Optional[bool]:
-        """Return True/False when a device exposes a power state API."""
-
-        state_fn = getattr(device, "is_on", None)
-        if not callable(state_fn):
-            return None
-
-        try:
-            state = state_fn()
-            if isawaitable(state):
-                state = await state
-        except Exception as exc:  # pragma: no cover - defensive logging
-            self._log(
-                f"Unable to query power state for '{device_id}': {exc}",
-                level="WARNING",
-                entity=environment_id,
-            )
-            return None
-
-        return bool(state) if state is not None else None
-
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
     def _device_effects(self, device_id: str) -> List[Mapping[str, object]]:
         definition = self.device_definitions.get(device_id)
         if not definition:
@@ -514,7 +476,7 @@ def _time_in_range(range_definition: str, now: _dt.time) -> bool:
         start_str, end_str = range_definition.split("-")
         start = _to_time(start_str)
         end = _to_time(end_str)
-    except (ValueError, TypeError):  # pragma: no cover - defensive parse
+    except (ValueError, TypeError):
         return False
 
     if start <= end:
