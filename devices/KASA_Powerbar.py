@@ -204,7 +204,7 @@ class KasaPowerbar:
     async def is_on(self) -> bool:
         """Return True when the configured outlet is powered on."""
         self._ensure_initialized()
-        await self._outlet.update()
+        await self._device.update()
         return bool(getattr(self._outlet, "is_on", False))
 
     async def _set_power_state(self, *, desired_state: bool) -> PowerCommandResult:
