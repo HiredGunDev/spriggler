@@ -1,6 +1,9 @@
 {
   "version": "0.3",
   "name": "Colonial Beach Grow",
+  "units": {
+    "temperature": "F"
+  },
 
   "environments": {
     "veg": {
