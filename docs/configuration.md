@@ -361,7 +361,8 @@ Safety configuration defines the absolute limits that the safety monitor enforce
   "sensor_stale_after_missed": 3,
   "safety_loop_interval_seconds": 15,
   "battery_warning_percent": 20,
-  "battery_critical_percent": 5
+  "battery_critical_percent": 5,
+  "rssi_warning_dbm": -90
 }
 ```
 
@@ -389,6 +390,7 @@ Safety configuration defines the absolute limits that the safety monitor enforce
 | `safety_loop_interval_seconds` | How often the safety monitor runs its evaluation loop |
 | `battery_warning_percent` | Battery level that triggers a warning alert. Default: 20 |
 | `battery_critical_percent` | Battery level that triggers a critical alert. Default: 5 |
+| `rssi_warning_dbm` | Signal strength that triggers a warning alert. Default: -90 |
 
 ## Units
 

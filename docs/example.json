@@ -382,6 +382,7 @@
     "sensor_stale_after_missed": 3,
     "safety_loop_interval_seconds": 15,
     "battery_warning_percent": 20,
-    "battery_critical_percent": 5
+    "battery_critical_percent": 5,
+    "rssi_warning_dbm": -90
   }
 }

@@ -65,6 +65,7 @@ The safety monitor is a first-class component, separate from and superior to the
 - **Device-sensor coherence.** If a device claims ON and the expected sensor effect doesn't appear within a reasonable window, the device is presumed failed. If a device claims OFF and the sensor shows its signature effect, the device is presumed stuck on.
 - **Sensor liveness.** If a sensor stops reporting, the safety monitor cannot verify safety. Affected devices enter safe state until sensor data resumes.
 - **Sensor battery.** If a sensor reports a `battery` value, the safety monitor tracks it. Warning at 20% (default). Critical alert at 5% (default). A dead battery is a predictable sensor failure — the safety monitor warns before it becomes a sensor liveness event that forces devices to safe state.
+- **Sensor signal strength.** If a sensor reports an `signal_strength` (RSSI) value, the safety monitor tracks it. Degrading signal predicts missed polls and eventual sensor stale events. Warning when RSSI drops below threshold (default: -90dBm). Trending RSSI decline over days suggests battery degradation, physical obstruction, or equipment relocation — all worth alerting on before the sensor goes dark.
 
 **What it can do:**
 
