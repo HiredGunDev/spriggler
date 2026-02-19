@@ -1,0 +1,327 @@
+{
+  "version": "0.3",
+  "name": "Colonial Beach Grow",
+
+  "environments": {
+    "veg": {
+      "description": "Vegetative chamber in shed",
+      "connections": {
+        "flower": {
+          "via": "inter_fan",
+          "bidirectional": false
+        },
+        "ambient": {
+          "via": "veg_exhaust",
+          "bidirectional": false
+        }
+      }
+    },
+    "flower": {
+      "description": "Flowering chamber in shed",
+      "connections": {
+        "ambient": {
+          "via": "flower_exhaust",
+          "bidirectional": false
+        }
+      }
+    },
+    "seedling_pod": {
+      "description": "Seedling pod on back porch",
+      "connections": {
+        "ambient": {
+          "via": "pod_vent",
+          "bidirectional": false
+        }
+      }
+    }
+  },
+
+  "sensors": {
+    "govee_veg": {
+      "driver": "govee_h5100",
+      "address": "REPLACE_WITH_MAC",
+      "environment": "veg",
+      "properties": ["temperature", "humidity"],
+      "poll_interval_seconds": 60
+    },
+    "govee_flower": {
+      "driver": "govee_h5100",
+      "address": "REPLACE_WITH_MAC",
+      "environment": "flower",
+      "properties": ["temperature", "humidity"],
+      "poll_interval_seconds": 60
+    },
+    "govee_pod": {
+      "driver": "govee_h5100",
+      "address": "REPLACE_WITH_MAC",
+      "environment": "seedling_pod",
+      "properties": ["temperature", "humidity"],
+      "poll_interval_seconds": 30
+    }
+  },
+
+  "devices": {
+    "veg_heater": {
+      "driver": "kasa_plug",
+      "address": "REPLACE_WITH_IP",
+      "environment": "veg",
+      "circuit": "shed_main",
+      "role": "heater",
+      "power_monitoring": true
+    },
+    "veg_humidifier": {
+      "driver": "kasa_plug",
+      "address": "REPLACE_WITH_IP",
+      "environment": "veg",
+      "circuit": "shed_main",
+      "role": "humidifier",
+      "power_monitoring": true
+    },
+    "veg_exhaust": {
+      "driver": "kasa_plug",
+      "address": "REPLACE_WITH_IP",
+      "environment": "veg",
+      "circuit": "shed_main",
+      "role": "exhaust",
+      "power_monitoring": true
+    },
+    "inter_fan": {
+      "driver": "kasa_plug",
+      "address": "REPLACE_WITH_IP",
+      "environment": "veg",
+      "circuit": "shed_main",
+      "role": "transfer",
+      "power_monitoring": true
+    },
+    "veg_light": {
+      "driver": "kasa_plug",
+      "address": "REPLACE_WITH_IP",
+      "environment": "veg",
+      "circuit": "shed_main",
+      "role": "light",
+      "power_monitoring": true
+    },
+    "flower_heater": {
+      "driver": "kasa_plug",
+      "address": "REPLACE_WITH_IP",
+      "environment": "flower",
+      "circuit": "shed_main",
+      "role": "heater",
+      "power_monitoring": true
+    },
+    "flower_exhaust": {
+      "driver": "kasa_plug",
+      "address": "REPLACE_WITH_IP",
+      "environment": "flower",
+      "circuit": "shed_main",
+      "role": "exhaust",
+      "power_monitoring": true
+    },
+    "flower_light": {
+      "driver": "kasa_plug",
+      "address": "REPLACE_WITH_IP",
+      "environment": "flower",
+      "circuit": "shed_main",
+      "role": "light",
+      "power_monitoring": true
+    },
+    "pod_heater": {
+      "driver": "kasa_plug",
+      "address": "REPLACE_WITH_IP",
+      "environment": "seedling_pod",
+      "circuit": "porch",
+      "role": "heater",
+      "power_monitoring": true
+    },
+    "pod_vent": {
+      "driver": "kasa_plug",
+      "address": "REPLACE_WITH_IP",
+      "environment": "seedling_pod",
+      "circuit": "porch",
+      "role": "exhaust",
+      "power_monitoring": true
+    },
+    "pod_humidifier": {
+      "driver": "kasa_plug",
+      "address": "REPLACE_WITH_IP",
+      "environment": "seedling_pod",
+      "circuit": "porch",
+      "role": "humidifier",
+      "power_monitoring": true
+    }
+  },
+
+  "circuits": {
+    "shed_main": {
+      "max_amps": 20,
+      "voltage": 120,
+      "description": "Shed main circuit"
+    },
+    "porch": {
+      "max_amps": 15,
+      "voltage": 120,
+      "description": "Back porch outlet for seedling pod"
+    }
+  },
+
+  "schedules": {
+    "veg": {
+      "phases": [
+        {
+          "name": "lights_on",
+          "start": "06:00",
+          "end": "00:00",
+          "targets": {
+            "temperature": { "min": 75, "max": 82, "ideal": 78 },
+            "humidity": { "min": 55, "max": 70, "ideal": 62 }
+          },
+          "devices": {
+            "veg_light": "on"
+          }
+        },
+        {
+          "name": "lights_off",
+          "start": "00:00",
+          "end": "06:00",
+          "targets": {
+            "temperature": { "min": 65, "max": 75, "ideal": 70 },
+            "humidity": { "min": 55, "max": 70, "ideal": 62 }
+          },
+          "devices": {
+            "veg_light": "off"
+          }
+        }
+      ]
+    },
+    "flower": {
+      "phases": [
+        {
+          "name": "lights_on",
+          "start": "18:00",
+          "end": "06:00",
+          "targets": {
+            "temperature": { "min": 72, "max": 80, "ideal": 76 },
+            "humidity": { "min": 40, "max": 55, "ideal": 48 }
+          },
+          "devices": {
+            "flower_light": "on"
+          }
+        },
+        {
+          "name": "lights_off",
+          "start": "06:00",
+          "end": "18:00",
+          "targets": {
+            "temperature": { "min": 62, "max": 72, "ideal": 68 },
+            "humidity": { "min": 40, "max": 55, "ideal": 48 }
+          },
+          "devices": {
+            "flower_light": "off"
+          }
+        }
+      ]
+    },
+    "seedling_pod": {
+      "phases": [
+        {
+          "name": "seedling_day",
+          "start": "06:00",
+          "end": "00:00",
+          "targets": {
+            "temperature": { "min": 75, "max": 82, "ideal": 78 },
+            "humidity": { "min": 65, "max": 80, "ideal": 72 }
+          }
+        },
+        {
+          "name": "seedling_night",
+          "start": "00:00",
+          "end": "06:00",
+          "targets": {
+            "temperature": { "min": 70, "max": 78, "ideal": 74 },
+            "humidity": { "min": 65, "max": 80, "ideal": 72 }
+          }
+        }
+      ]
+    }
+  },
+
+  "safety": {
+    "environments": {
+      "veg": {
+        "limits": {
+          "temperature": { "absolute_min": 45, "absolute_max": 100 },
+          "humidity": { "absolute_min": 10, "absolute_max": 95 }
+        },
+        "rate_of_change": {
+          "temperature": { "max_per_minute": 2.0 }
+        }
+      },
+      "flower": {
+        "limits": {
+          "temperature": { "absolute_min": 45, "absolute_max": 100 },
+          "humidity": { "absolute_min": 10, "absolute_max": 95 }
+        },
+        "rate_of_change": {
+          "temperature": { "max_per_minute": 2.0 }
+        }
+      },
+      "seedling_pod": {
+        "limits": {
+          "temperature": { "absolute_min": 55, "absolute_max": 95 },
+          "humidity": { "absolute_min": 20, "absolute_max": 95 }
+        },
+        "rate_of_change": {
+          "temperature": { "max_per_minute": 1.5 }
+        }
+      }
+    },
+    "devices": {
+      "veg_heater": {
+        "safe_state": "off",
+        "coherence_window_seconds": 300,
+        "max_continuous_runtime_minutes": 60,
+        "hardware_countdown_seconds": 120
+      },
+      "flower_heater": {
+        "safe_state": "off",
+        "coherence_window_seconds": 300,
+        "max_continuous_runtime_minutes": 60,
+        "hardware_countdown_seconds": 120
+      },
+      "pod_heater": {
+        "safe_state": "off",
+        "coherence_window_seconds": 180,
+        "max_continuous_runtime_minutes": 30,
+        "hardware_countdown_seconds": 90
+      },
+      "veg_exhaust": {
+        "safe_state": "on",
+        "coherence_window_seconds": 120
+      },
+      "flower_exhaust": {
+        "safe_state": "on",
+        "coherence_window_seconds": 120
+      },
+      "pod_vent": {
+        "safe_state": "on",
+        "coherence_window_seconds": 120
+      },
+      "veg_humidifier": {
+        "safe_state": "off",
+        "coherence_window_seconds": 300
+      },
+      "pod_humidifier": {
+        "safe_state": "off",
+        "coherence_window_seconds": 300
+      },
+      "veg_light": {
+        "safe_state": "current"
+      },
+      "flower_light": {
+        "safe_state": "current"
+      }
+    },
+    "sensor_stale_after_missed": 3,
+    "safety_loop_interval_seconds": 15
+  }
+}
