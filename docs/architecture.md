@@ -22,6 +22,10 @@ The core insight: environmental control is a thermodynamics problem. Temperature
 
 **Fail toward safety.** When the model diverges from reality or constraints become unsatisfiable, the system must act conservatively and alert the user, not freeze or crash.
 
+**Hardware-level failsafes.** When devices support independent timers, keep-alives, or countdown mechanisms, Spriggler uses them to enforce safe states at the hardware level. For example, a KASA plug powering a heater will have its countdown timer set to turn OFF. Spriggler refreshes this timer on every control cycle. If Spriggler crashes, loses network, or the host machine dies, the plug counts down and turns itself off without any software intervention. The safe state is enforced by the hardware, not by the daemon. Software safety is defense in depth — hardware safety is the last line.
+
+**Sensors are truth. Devices lie.** Device self-reported status is informational, not authoritative. A heater that claims to be on while temperature drops is a failed heater. Safety decisions are always based on sensor readings, never on device state alone.
+
 ## System Components
 
 ```
@@ -31,6 +35,13 @@ The core insight: environmental control is a thermodynamics problem. Temperature
 │            config/    calibration/    logs/          │
 ├─────────────────────────────────────────────────────┤
 │                   SPRIGGLER DAEMON                   │
+│                                                      │
+│  ┌────────────────────────────────────────────────┐  │
+│  │              SAFETY MONITOR                     │  │
+│  │  Independent loop. Reads sensors. Vetoes.       │  │
+│  │  Cannot be overridden by solver.                │  │
+│  └────────────────────────────────────────────────┘  │
+│                                                      │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐  │
 │  │ Sensors  │ │ Devices  │ │ Physics  │ │ Solver │  │
 │  │ Drivers  │ │ Drivers  │ │  Model   │ │        │  │
@@ -41,11 +52,49 @@ The core insight: environmental control is a thermodynamics problem. Temperature
    [BLE, WiFi]    [KASA, VeSync, etc.]
 ```
 
+### Safety Monitor
+
+The safety monitor is a first-class component, separate from and superior to the solver. It runs on its own loop, reads sensors directly, and has authority to override any device command.
+
+**Why it's separate:** The solver optimizes. It finds the best path to targets. But optimization has no concept of "this will destroy what's in this environment." The safety monitor does. A solver might decide a heater should run because the model says the environment is cold. The safety monitor knows the sensor reads 130°F and kills the heater regardless of what the solver or the device itself claims.
+
+**What it monitors:**
+
+- **Absolute limits.** Hard boundaries that must never be crossed. These are not targets — they are walls. The user defines them based on what's in the environment.
+- **Rate of change.** A 20°F spike in 5 minutes is a hardware failure, not weather. Rapid change in any property triggers investigation and possible shutdown.
+- **Device-sensor coherence.** If a device claims ON and the expected sensor effect doesn't appear within a reasonable window, the device is presumed failed. If a device claims OFF and the sensor shows its signature effect, the device is presumed stuck on.
+- **Sensor liveness.** If a sensor stops reporting, the safety monitor cannot verify safety. Affected devices enter safe state until sensor data resumes.
+
+**What it can do:**
+
+- Force any device to its configured safe state (typically OFF for heaters, ON for exhaust fans)
+- Lock out a device entirely (prevent solver from using it)
+- Escalate alerts (log, notification, alarm)
+
+**What it cannot do:**
+
+- Turn on a device that the solver hasn't requested. It vetoes; it doesn't command.
+- Be overridden by the solver. Safety trumps optimization, always.
+
+**Safe states are per-device and configured by the user:**
+
+| Device Type | Typical Safe State | Rationale |
+|---|---|---|
+| Heater | OFF | Runaway heater causes damage or fire |
+| Exhaust fan | ON | Ventilation prevents heat/humidity buildup |
+| Humidifier | OFF | Excess humidity causes damage |
+| Light | Current state | Lights don't pose immediate environmental danger |
+| Circulation fan | ON | Air movement is generally safe |
+
 ### Sensors
 
 Sensor drivers read physical state. Each driver knows how to talk to specific hardware (Govee BLE thermometers, etc.) and exposes a uniform interface: `read() → dict of property values`.
 
+**The ambient sensor is required.** Without knowing the outside temperature and humidity, the physics model cannot compute envelope loss rates, which means it cannot predict the net effect of any device. Place the ambient sensor outside of all controlled environments — outdoors, or in the room that contains a grow tent.
+
 Sensors report what they measure. They don't know what properties mean.
+
+**Sensor health tracking:** The safety monitor tracks each sensor's reporting interval. If a sensor misses more than N consecutive expected reports, it is marked stale. Environments with stale sensors trigger conservative device management.
 
 ### Devices
 
@@ -53,15 +102,42 @@ Device drivers control physical equipment. Each driver knows how to talk to spec
 
 Devices that support power monitoring (KASA) report real-time wattage. This feeds both calibration and runtime optimization.
 
+**Hardware failsafe timers:** Drivers that support hardware-level countdown timers expose: `set_countdown(seconds, target_state)` and `supports_countdown() → bool`. During normal operation, the daemon sets a countdown to safe state on every control cycle. If the daemon stops refreshing, the hardware enforces the safe state autonomously. This is the most important safety feature in the system — it works even when everything else has failed.
+
+**Device status is advisory, not authoritative.** The system always validates device behavior against sensor readings. A heater reporting ON with no temperature change is flagged. A heater reporting OFF with rising temperature is flagged.
+
 ### Physics Model
 
-The physics model contains:
+The physics model has two layers:
 
-1. **Known equations** - Psychrometrics, heat transfer, mass balance. These are code.
+**1. Envelope model (learned per environment):**
 
-2. **Learned coefficients** - Transfer functions for each device in each environment. These come from calibration.
+Every environment loses energy to its boundary conditions — the space outside its walls. A shed loses heat to the outdoors. A grow tent inside a shed loses heat to the shed. The rate of loss is proportional to the temperature differential between inside and outside.
 
-The model can answer: "If I turn on device X, what happens to properties Y and Z over time?"
+During calibration (all devices off), the system measures how fast each environment drifts toward ambient. This gives the thermal loss coefficient of the space — how leaky the envelope is. This coefficient, combined with the *current* ambient temperature, lets the model predict how fast the environment will cool (or warm) on its own.
+
+This is why the ambient sensor is not optional. Without knowing the outside temperature, the model cannot predict thermal loss, which means it cannot predict the net effect of any device.
+
+**2. Device model (learned per device):**
+
+Each device contributes energy to (or removes energy from) the environment. A 1500W heater delivers roughly 1500W of thermal energy regardless of outdoor temperature. What *changes* with outdoor temperature is the *net* effect — the device's contribution minus the envelope's loss.
+
+During calibration, the system measures each device's contribution *on top of* the baseline envelope loss. The learned value is the device's energy contribution rate, not the net temperature change. The net change is computed at runtime using the current ambient conditions.
+
+**The model answers:** "Given current indoor temperature, current ambient temperature, and the envelope loss rate, if I turn on device X, what will the net effect on properties Y and Z be over time?"
+
+At 80°F outside with an indoor target of 78°F, the heater barely needs to run — envelope loss is minimal. At 5°F outside, the heater runs constantly and may not keep up — envelope loss exceeds heater capacity. The solver knows this because it has both numbers.
+
+**Known equations** — Psychrometrics (via PsychroLib), heat transfer, mass balance. These are code.
+
+**Learned coefficients** — Envelope loss rates per environment, device energy contributions, interaction effects (e.g., lights generating heat). These come from calibration.
+
+**Interaction awareness:** The model knows that:
+- Heating air reduces relative humidity (psychrometrics)
+- Moving air between spaces transfers both heat and moisture
+- Lights generate heat as a side effect
+- Exhaust fans remove both heat and humidity
+- These interactions are physical law, not learned — but their magnitudes in specific environments are learned
 
 ### Solver
 
@@ -76,37 +152,122 @@ It finds: the combination of device states that moves toward targets with minimu
 
 This is not machine learning. It's solving a system of equations with known physics and measured coefficients.
 
+The solver proposes. The safety monitor disposes.
+
 ## Data Flow
 
 ### Normal Operation
 
 ```
 1. Sensors report current state
-2. Scheduler provides current targets
-3. Solver computes optimal device states given:
+2. Safety monitor evaluates: any absolute limits breached?
+   - YES → Force safe states, alert, skip to step 6
+   - NO  → Continue
+3. Scheduler provides current targets
+4. Solver computes optimal device states given:
    - Current state
-   - Target state  
+   - Target state
    - Learned transfer functions
    - Constraints (electrical, physical)
-4. Devices receive commands
-5. Validation: predicted vs actual state compared
-6. Log decisions with full explanation
+   - Device lockouts (from safety monitor)
+5. Safety monitor reviews proposed commands:
+   - Would this command violate any safety rule? → Veto it
+   - All clear? → Execute
+6. Devices receive commands
+7. Validation: predicted vs actual state compared
+   - Safety monitor: device-sensor coherence check
+   - Solver: model accuracy tracking
+8. Log decisions with full explanation
 ```
 
 ### Calibration
 
+Calibration derives physical constants of the system — not snapshots of behavior at one point in time. The goal is to characterize properties that remain valid across seasons and conditions.
+
+#### Phase 1: Envelope Characterization (48+ hours, environment empty, all devices off)
+
+The most important thing calibration learns is the **effective R-value** of each environment's envelope. This is a physical constant of the structure — it doesn't change with the seasons, only with physical modifications (adding insulation, breaking a seal, leaving a vent open).
+
+Heat transfer through an envelope follows:
+
 ```
-1. User initiates calibration (environment empty)
-2. System measures baseline (all devices off, ambient drift)
-3. For each device:
-   a. Turn on device
-   b. Record sensor changes over time
-   c. Record power consumption (if available)
-   d. Compute transfer coefficients
-   e. Turn off device, wait for settling
-4. Store learned model in calibration/
-5. Validate model with spot checks
+Q = (1/R) × A × ΔT
+
+Where:
+  Q  = heat flow (watts)
+  R  = thermal resistance of the envelope
+  A  = effective surface area
+  ΔT = temperature differential (inside - ambient)
 ```
+
+We don't need to know R and A independently. We solve for the aggregate `(1/R) × A` as a single coefficient — call it the **envelope conductance**. This one number captures the total thermal leakiness of the space: walls, ceiling, floor, seals, air gaps, everything.
+
+**How it's measured:**
+
+1. Environment is empty. All devices off.
+2. Ambient sensor records outside temperature continuously.
+3. Interior sensor records inside temperature continuously.
+4. System runs for at least 48 hours — two full day/night cycles.
+5. As interior temperature drifts toward ambient, the system records the rate of change at each moment alongside the current differential.
+6. From many (rate, differential) data points across varying conditions, the system fits the envelope conductance coefficient.
+7. Two daily cycles provide a range of differentials to verify the coefficient is consistent. If it's consistent across a 15-degree ambient swing, it will hold across a 50-degree seasonal swing.
+
+**Verification:** If the derived coefficient is NOT consistent across different differentials, the system flags this — it suggests nonlinear behavior like wind-dependent air leaks, solar gain on one side of the structure, or other effects that a simple R-value model doesn't capture. The system reports this to the user and may need a more complex envelope model for that environment.
+
+**Moisture characterization** follows the same principle but is more complex. Moisture transfer involves both diffusion through materials and air exchange (infiltration). The system derives an aggregate moisture conductance coefficient the same way — watch humidity drift toward ambient humidity with everything off, fit the coefficient from (rate, differential) pairs.
+
+#### Phase 2: Device Characterization (automated, sequential)
+
+With the envelope characterized, device calibration measures each device's **energy contribution** — isolated from envelope effects.
+
+1. For each device:
+   a. Record current ambient and interior conditions
+   b. Predict envelope drift using the Phase 1 model
+   c. Turn on device
+   d. Safety monitor watches for runaway conditions
+   e. Record sensor changes over time
+   f. Subtract predicted envelope drift to isolate device contribution
+   g. Record power consumption (if available)
+   h. Compute device energy contribution rate (watts thermal, grams moisture/hr, etc.)
+   i. Turn off device, wait for settling
+2. For cross-environment devices (inter-chamber fans):
+   a. Record both source and destination environment states
+   b. Activate device
+   c. Record changes in both environments
+   d. Compute transfer rates for heat and humidity
+3. For devices with secondary effects (lights generating heat):
+   a. Measure primary effect (illumination schedule)
+   b. Measure thermal contribution as a side effect
+   c. Record both — solver needs to know that turning lights on adds heat
+
+**Device contributions are approximately constant** — a 1500W heater outputs ~1500W regardless of outdoor temperature. What changes is the net effect, which the solver computes at runtime by combining the device contribution with the current envelope loss rate.
+
+#### Phase 3: Validation
+
+1. Predict: "Turning on device X for 10 minutes at current conditions should change temperature by Y degrees"
+2. Execute and compare
+3. Report model accuracy
+4. If accuracy is poor, diagnose: is the envelope model off, or the device model?
+5. Store validated model in calibration/
+
+#### Passive Recalibration (continuous, during normal operation)
+
+After initial calibration, the system continuously validates its model against reality. Every solver prediction that can be compared to an actual outcome is a data point.
+
+**What passive recalibration tracks:**
+
+- **Envelope conductance stability.** The R-value shouldn't change unless something physical changed. If prediction errors trend consistently in one direction over days or weeks, the system reports: "Envelope conductance appears to have increased by 15% since calibration. Possible causes: seal deterioration, insulation displacement, new air leak. Consider physical inspection."
+
+- **Device contribution stability.** If a heater's measured thermal output drops over time, the element may be degrading. The system flags this as a maintenance issue, not a calibration issue.
+
+- **Model accuracy score.** Continuously computed. When accuracy drops below threshold, the system recommends action — not "recalibrate" as a blanket instruction, but specific diagnosis: "Envelope model accuracy degraded. Device models remain accurate. Physical inspection of environment seals recommended."
+
+**What passive recalibration does NOT do:**
+
+- Silently adjust coefficients without telling the user. If the R-value appears to have changed, that's a physical event worth investigating, not a number to quietly tweak.
+- Replace initial calibration. Passive recalibration validates and diagnoses. It doesn't derive new coefficients from scratch — the initial controlled-conditions calibration provides the baseline.
+
+**The insight:** Most environmental controllers treat recalibration as "run the setup wizard again." Spriggler treats calibration drift as diagnostic information. A changing R-value means something happened to the structure. A changing device contribution means something happened to the equipment. These are things the user needs to know, not things the software should hide.
 
 ## File Interfaces
 
@@ -119,6 +280,7 @@ User-authored. Describes what exists:
 - **Devices** - What hardware, how to control it, which environment, which circuit
 - **Circuits** - Electrical capacity limits
 - **Schedules** - Time-based targets for each environment
+- **Safety** - Absolute limits per environment, per-device safe states, rate-of-change thresholds, coherence windows
 
 Config does NOT describe what devices do to properties. That's learned.
 
@@ -126,41 +288,99 @@ Config does NOT describe what devices do to properties. That's learned.
 
 System-generated during calibration. Contains:
 
-- **Baseline measurements** - Ambient drift rates per environment
-- **Device transfer functions** - Measured effect of each device on each property
-- **Power profiles** - Actual wattage under load
-- **Calibration metadata** - When calibrated, ambient conditions at time
+- **Envelope models** - Derived envelope conductance (aggregate thermal and moisture leakiness) per environment, with confidence metrics and the ambient temperature range observed during calibration
+- **Envelope linearity assessment** - Whether the conductance coefficient was consistent across observed differentials, or whether nonlinear effects were detected
+- **Device energy contributions** - Measured energy output of each device (watts thermal, grams moisture/hr), isolated from envelope effects
+- **Device secondary effects** - Measured side effects (e.g., thermal output of grow lights)
+- **Cross-environment transfer rates** - Heat and moisture transfer rates for inter-chamber devices, measured in both source and destination environments
+- **Device response signatures** - Expected sensor response timing and magnitude for safety monitor coherence checking
+- **Power profiles** - Actual wattage under load per device
+- **Validation results** - Prediction accuracy from Phase 3 spot checks
+- **Calibration metadata** - When calibrated, ambient temperature range during calibration, duration, model accuracy scores
 
-Calibration is environment-specific. Recalibrate when physical setup changes.
+**Passive recalibration data** is stored separately from initial calibration:
+
+- **Prediction accuracy log** - Rolling accuracy score for envelope and device models
+- **Drift tracking** - Trend data for envelope conductance and device contributions over time
+- **Diagnostic events** - Timestamped records of detected coefficient changes with possible causes
+
+Calibration is environment-specific. Initial calibration requires an empty environment. Passive recalibration runs continuously during normal operation and provides diagnostic information rather than silent correction.
 
 ### logs/
 
 System-generated during operation:
 
 - **Decisions** - What the solver chose and why
+- **Safety events** - Vetoes, lockouts, limit breaches, coherence failures
 - **Predictions vs actuals** - Model validation
 - **Anomalies** - When reality diverges from model
 - **Events** - Device commands, sensor readings, errors
 
 Structured format for machine parsing. Human-readable for debugging.
 
-## Cross-Environment Optimization
+## The Cost Function: How Spriggler Reasons
 
-Environments can exchange resources:
+Spriggler doesn't use priority rankings between environments. It doesn't need them. Instead, it uses a continuous cost function that captures what a competent human operator intuitively knows: how bad is this situation, and how fast is it getting worse?
 
-- **Heat** - Inter-chamber fans move warm/cool air
-- **Humidity** - Moving air moves moisture
-- **Electrical capacity** - Devices on different circuits
+### The Shape of Cost
 
-When Environment A needs something that Environment B has excess of, the solver may choose transfer over generation. Example:
+```
+                          │
+            cost           │         ╱
+                          │        ╱
+                          │       ╱
+                          │      ╱
+                          │    ╱
+                          │  ╱
+                          │╱         ___───
+              ────────────┼───────── 
+         absolute_min   min    ideal    max   absolute_max
+```
 
-- Veg needs heat
-- Flower is above target temperature  
+- **Within ideal range:** Cost is zero. No action needed.
+- **Between ideal and min/max targets:** Cost rises gently. The solver acts if it can, but won't sacrifice other environments for marginal improvement.
+- **Between min/max targets and absolute limits:** Cost rises steeply. This is where resources get redirected from comfortable environments to struggling ones.
+- **At absolute limits:** Cost is effectively infinite. The safety monitor has already intervened, but the solver also treats this as the highest priority.
+
+This curve means the solver naturally does what a human would do:
+
+- Veg chamber dropping toward absolute minimum while flower is 2°F above ideal? **Move heat from flower to veg.** The cost reduction in veg dwarfs the cost increase in flower.
+- Humidifier failed in flower, humidity at 38% instead of 48% target? **Shrug.** Cost is low — well within the gentle slope of the curve. Don't steal resources from environments that need them more.
+- Heater failed in flower but it's 80°F outside and flower is at 78°F? **Non-event.** Cost is near zero. Solver doesn't waste energy solving a problem that doesn't exist.
+
+### Why Not Priority Rankings?
+
+A priority system would say "veg is priority 1, flower is priority 2." But that's wrong — sometimes flower matters more than veg, depending on what's happening *right now*. A priority system can't express "the veg chamber is fine but the flower chamber is about to freeze." The cost function can, because it's driven by the actual state of each environment relative to its targets and limits.
+
+Priority is static. Situational awareness is dynamic. Spriggler reasons dynamically.
+
+### Multi-Environment Solving
+
+The solver minimizes total cost across all environments simultaneously, subject to device and circuit constraints. This means it naturally discovers cross-environment strategies:
+
+**Resource transfer instead of generation:**
+- Veg needs heat, flower has excess heat
 - Inter-chamber fan costs 23W
 - Veg heater costs 1500W
-- Solver chooses: fan
+- Solver chooses: fan (lower energy cost, reduces cost in veg, barely increases cost in flower)
 
-This emerges from the optimization, not from coded rules.
+**Graceful degradation on device failure:**
+- Veg heater locked out by safety monitor
+- Solver re-solves without it
+- Finds: run flower heater harder + inter-fan moves warm air to veg
+- Flower temperature drops slightly but stays within acceptable range
+- Veg temperature stabilizes above critical threshold
+- Total cost across both environments is minimized given available resources
+
+**Triage under constraint:**
+- Pod heater and veg heater both struggling in extreme cold
+- Circuit can't run both at full capacity
+- Solver evaluates: pod is closer to its absolute minimum, cost curve is steeper there
+- Solver allocates more circuit capacity to pod heater
+- This isn't a coded rule — it falls out of the cost function because the pod's situation is more dire
+- The solver knows nothing about seedlings or plants — it only knows that the pod's cost curve is screaming louder than the veg chamber's
+
+These behaviors emerge from the optimization. No one codes "if veg heater fails, use flower heater plus inter-fan." The solver discovers it because it's the lowest-cost combination of available device states.
 
 ## Electrical Constraints
 
@@ -169,6 +389,21 @@ Circuits have amperage limits. The solver treats electrical capacity as a constr
 If running Device A would exceed circuit capacity, the solver looks for alternatives - possibly running an equivalent device on a different circuit, or achieving the goal indirectly through environmental transfer.
 
 ## Failure Modes
+
+### Device Failure - Silent
+
+The most dangerous failure. Device stops working but doesn't report an error. Detected by the safety monitor through device-sensor coherence:
+
+- Heater claims ON, temperature dropping → heater dead, lock it out, alert user
+- Heater claims OFF, temperature spiking → heater stuck on, kill the circuit if possible, alert user immediately
+
+**Response:** Lock out device, re-solve without it, alert user. Do not retry a device that has failed coherence checks without user intervention.
+
+### Device Failure - Runaway
+
+Device operates beyond expected parameters. Temperature climbing at a rate inconsistent with the device's calibrated transfer function.
+
+**Response:** Force device to safe state. If temperature continues climbing (device ignoring commands), escalate — kill the smart plug, alert user with maximum urgency. This is a fire or total-loss scenario.
 
 ### Model Drift
 
@@ -186,22 +421,26 @@ When targets cannot be reached with available devices:
 2. Log which constraints are violated and why
 3. Alert user: "Cannot reach target humidity, all available devices at capacity"
 
-### Hardware Failure
+### Sensor Failure
 
-When a device or sensor stops responding:
+When a sensor stops responding:
 
-1. Mark it unavailable
-2. Re-solve without that resource
-3. Alert user
-4. Continue with degraded capability
+1. Mark it stale after N missed reports
+2. Safety monitor cannot verify environment safety
+3. Affected devices enter safe state
+4. Alert user: "Sensor offline, environment in safe mode"
 
-### Calibration Stale
+**No sensor data = no device operation.** The system will not blindly control devices without feedback.
 
-When calibration data is old or ambient conditions differ significantly from calibration conditions:
+### Calibration Drift
 
-1. Reduce model confidence
-2. Widen acceptable prediction error
-3. Suggest recalibration
+When passive recalibration detects consistent prediction errors:
+
+1. Diagnose: is the error in the envelope model or a device model?
+2. If envelope: "Envelope conductance has changed. Possible physical cause. Inspect structure."
+3. If device: "Device X thermal output has decreased 20% since calibration. Possible equipment degradation."
+4. Widen prediction tolerance to avoid false safety alerts while drift is within manageable bounds
+5. If drift exceeds manageable bounds, recommend physical inspection and potential recalibration
 
 ## What Carries Forward from 0.2
 
@@ -209,6 +448,7 @@ When calibration data is old or ambient conditions differ significantly from cal
 
 - Sensor drivers (Govee BLE)
 - Device drivers (KASA, VeSync)
+- KASA hardware countdown timer management (proven, critical safety feature)
 - Power state management
 - Structured logging format
 
@@ -219,14 +459,22 @@ When calibration data is old or ambient conditions differ significantly from cal
 - Per-property evaluation
 - Sequential command issuing
 
+## Decisions Made
+
+- **Psychrometric library:** PsychroLib (existing package, not rolling our own)
+- **Safety monitor:** Separate component, independent loop, veto authority over solver
+- **Device trust model:** Sensors are truth, device self-report is advisory only
+- **Multi-environment reasoning:** Cost function, not priority rankings. Solver minimizes total cost across all environments simultaneously. Resources flow to where the situation is most dire.
+- **Envelope characterization:** Derive physical constants (effective R-value / envelope conductance) that hold across seasons, not snapshot coefficients that expire. 48-hour minimum initial calibration with two daily cycles.
+- **Recalibration:** Passive and continuous during normal operation. Drift is treated as diagnostic information (something physical changed) rather than a calibration problem to silently correct.
+- **Ambient sensor:** Required, not optional. The physics model cannot function without knowing boundary conditions.
+
 ## Open Questions
 
 - Solver implementation: off-the-shelf optimizer or custom?
 - Calibration granularity: how many data points per device?
-- Psychrometric library: existing package or roll our own?
 - Schedule format: same as 0.2 or revised?
 - Web UI protocol: REST API, WebSocket, or pure file-based?
+- Alert/notification mechanism: log-only, email, SMS, push?
 
 ---
-
-
