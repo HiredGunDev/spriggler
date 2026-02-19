@@ -30,18 +30,18 @@ The core insight: environmental control is a thermodynamics problem. Temperature
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                     CLI / Web UI                     │
+│                     CLI / Web UI                    │
 ├─────────────────────────────────────────────────────┤
-│            config/    calibration/    logs/          │
+│            config/    calibration/    logs/         │
 ├─────────────────────────────────────────────────────┤
-│                   SPRIGGLER DAEMON                   │
-│                                                      │
-│  ┌────────────────────────────────────────────────┐  │
-│  │              SAFETY MONITOR                     │  │
-│  │  Independent loop. Reads sensors. Vetoes.       │  │
-│  │  Cannot be overridden by solver.                │  │
-│  └────────────────────────────────────────────────┘  │
-│                                                      │
+│                   SPRIGGLER DAEMON                  │
+│                                                     │
+│  ┌────────────────────────────────────────────────┐ │
+│  │              SAFETY MONITOR                    │ │
+│  │  Independent loop. Reads sensors. Vetoes.      │ │
+│  │  Cannot be overridden by solver.               │ │
+│  └────────────────────────────────────────────────┘ │
+│                                                     │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐  │
 │  │ Sensors  │ │ Devices  │ │ Physics  │ │ Solver │  │
 │  │ Drivers  │ │ Drivers  │ │  Model   │ │        │  │
