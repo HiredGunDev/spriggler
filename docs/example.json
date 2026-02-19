@@ -1,6 +1,9 @@
 {
   "version": "0.3",
   "name": "Colonial Beach Grow",
+  "units": {
+    "temperature": "F"
+  },
 
   "environments": {
     "veg": {
@@ -39,115 +42,170 @@
   "sensors": {
     "govee_veg": {
       "driver": "govee_h5100",
-      "address": "REPLACE_WITH_MAC",
       "environment": "veg",
       "properties": ["temperature", "humidity"],
-      "poll_interval_seconds": 60
+      "poll_interval_seconds": 60,
+      "driver_config": {
+        "address": "REPLACE_WITH_MAC"
+      }
     },
     "govee_flower": {
       "driver": "govee_h5100",
-      "address": "REPLACE_WITH_MAC",
       "environment": "flower",
       "properties": ["temperature", "humidity"],
-      "poll_interval_seconds": 60
+      "poll_interval_seconds": 60,
+      "driver_config": {
+        "address": "REPLACE_WITH_MAC"
+      }
     },
     "govee_pod": {
       "driver": "govee_h5100",
-      "address": "REPLACE_WITH_MAC",
       "environment": "seedling_pod",
       "properties": ["temperature", "humidity"],
-      "poll_interval_seconds": 30
+      "poll_interval_seconds": 30,
+      "driver_config": {
+        "address": "REPLACE_WITH_MAC"
+      }
+    },
+    "govee_ambient": {
+      "driver": "govee_h5100",
+      "environment": "ambient",
+      "properties": ["temperature", "humidity"],
+      "poll_interval_seconds": 120,
+      "driver_config": {
+        "address": "REPLACE_WITH_MAC"
+      }
+    },
+    "vesync_pod_humidity": {
+      "driver": "vesync_humidity",
+      "environment": "seedling_pod",
+      "properties": ["humidity"],
+      "poll_interval_seconds": 60,
+      "driver_config": {
+        "address": "REPLACE_WITH_IP"
+      }
     }
   },
 
   "devices": {
     "veg_heater": {
       "driver": "kasa_plug",
-      "address": "REPLACE_WITH_IP",
       "environment": "veg",
       "circuit": "shed_main",
       "role": "heater",
-      "power_monitoring": true
+      "driver_config": {
+        "address": "REPLACE_WITH_IP",
+        "plug_index": 0,
+        "power_monitoring": true
+      }
     },
     "veg_humidifier": {
-      "driver": "kasa_plug",
-      "address": "REPLACE_WITH_IP",
+      "driver": "vesync_humidifier",
       "environment": "veg",
       "circuit": "shed_main",
       "role": "humidifier",
-      "power_monitoring": true
+      "driver_config": {
+        "address": "REPLACE_WITH_IP",
+        "mist_levels": 3
+      }
     },
     "veg_exhaust": {
       "driver": "kasa_plug",
-      "address": "REPLACE_WITH_IP",
       "environment": "veg",
       "circuit": "shed_main",
       "role": "exhaust",
-      "power_monitoring": true
+      "driver_config": {
+        "address": "REPLACE_WITH_IP",
+        "plug_index": 1,
+        "power_monitoring": true
+      }
     },
     "inter_fan": {
       "driver": "kasa_plug",
-      "address": "REPLACE_WITH_IP",
       "environment": "veg",
       "circuit": "shed_main",
       "role": "transfer",
-      "power_monitoring": true
+      "driver_config": {
+        "address": "REPLACE_WITH_IP",
+        "plug_index": 2,
+        "power_monitoring": true
+      }
     },
     "veg_light": {
       "driver": "kasa_plug",
-      "address": "REPLACE_WITH_IP",
       "environment": "veg",
       "circuit": "shed_main",
       "role": "light",
-      "power_monitoring": true
+      "driver_config": {
+        "address": "REPLACE_WITH_IP",
+        "plug_index": 3,
+        "power_monitoring": true
+      }
     },
     "flower_heater": {
       "driver": "kasa_plug",
-      "address": "REPLACE_WITH_IP",
       "environment": "flower",
       "circuit": "shed_main",
       "role": "heater",
-      "power_monitoring": true
+      "driver_config": {
+        "address": "REPLACE_WITH_IP",
+        "plug_index": 0,
+        "power_monitoring": true
+      }
     },
     "flower_exhaust": {
       "driver": "kasa_plug",
-      "address": "REPLACE_WITH_IP",
       "environment": "flower",
       "circuit": "shed_main",
       "role": "exhaust",
-      "power_monitoring": true
+      "driver_config": {
+        "address": "REPLACE_WITH_IP",
+        "plug_index": 1,
+        "power_monitoring": true
+      }
     },
     "flower_light": {
       "driver": "kasa_plug",
-      "address": "REPLACE_WITH_IP",
       "environment": "flower",
       "circuit": "shed_main",
       "role": "light",
-      "power_monitoring": true
+      "driver_config": {
+        "address": "REPLACE_WITH_IP",
+        "plug_index": 2,
+        "power_monitoring": true
+      }
     },
     "pod_heater": {
       "driver": "kasa_plug",
-      "address": "REPLACE_WITH_IP",
       "environment": "seedling_pod",
       "circuit": "porch",
       "role": "heater",
-      "power_monitoring": true
+      "driver_config": {
+        "address": "REPLACE_WITH_IP",
+        "plug_index": 0,
+        "power_monitoring": true
+      }
     },
     "pod_vent": {
       "driver": "kasa_plug",
-      "address": "REPLACE_WITH_IP",
       "environment": "seedling_pod",
       "circuit": "porch",
       "role": "exhaust",
-      "power_monitoring": true
+      "driver_config": {
+        "address": "REPLACE_WITH_IP",
+        "plug_index": 1,
+        "power_monitoring": true
+      }
     },
     "pod_humidifier": {
-      "driver": "kasa_plug",
-      "address": "REPLACE_WITH_IP",
+      "driver": "vesync_humidifier",
       "environment": "seedling_pod",
       "circuit": "porch",
       "role": "humidifier",
-      "power_monitoring": true
+      "driver_config": {
+        "address": "REPLACE_WITH_IP",
+        "mist_levels": 3
+      }
     }
   },
 
@@ -322,6 +380,8 @@
       }
     },
     "sensor_stale_after_missed": 3,
-    "safety_loop_interval_seconds": 15
+    "safety_loop_interval_seconds": 15,
+    "battery_warning_percent": 20,
+    "battery_critical_percent": 5
   }
 }

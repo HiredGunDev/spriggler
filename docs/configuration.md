@@ -12,6 +12,9 @@ Configuration is JSON. The file lives in `config/spriggler.json` by default, or 
 {
   "version": "0.3",
   "name": "My Grow",
+  "units": {
+    "temperature": "F"
+  },
 
   "environments": { ... },
   "sensors": { ... },
@@ -81,112 +84,127 @@ A sensor is a piece of hardware that reports measurements.
 "sensors": {
   "govee_veg": {
     "driver": "govee_h5100",
-    "address": "A4:C1:38:XX:XX:XX",
     "environment": "veg",
     "properties": ["temperature", "humidity"],
-    "poll_interval_seconds": 60
+    "poll_interval_seconds": 60,
+    "driver_config": {
+      "address": "A4:C1:38:XX:XX:XX"
+    }
   },
   "govee_flower": {
     "driver": "govee_h5100",
-    "address": "A4:C1:38:YY:YY:YY",
     "environment": "flower",
     "properties": ["temperature", "humidity"],
-    "poll_interval_seconds": 60
+    "poll_interval_seconds": 60,
+    "driver_config": {
+      "address": "A4:C1:38:YY:YY:YY"
+    }
   },
   "govee_pod": {
     "driver": "govee_h5100",
-    "address": "A4:C1:38:ZZ:ZZ:ZZ",
     "environment": "seedling_pod",
     "properties": ["temperature", "humidity"],
-    "poll_interval_seconds": 30
+    "poll_interval_seconds": 30,
+    "driver_config": {
+      "address": "A4:C1:38:ZZ:ZZ:ZZ"
+    }
   },
   "govee_ambient": {
     "driver": "govee_h5100",
-    "address": "A4:C1:38:AA:AA:AA",
     "environment": "ambient",
     "properties": ["temperature", "humidity"],
-    "poll_interval_seconds": 120
+    "poll_interval_seconds": 120,
+    "driver_config": {
+      "address": "A4:C1:38:AA:AA:AA"
+    }
+  },
+  "vesync_pod_humidity": {
+    "driver": "vesync_humidity",
+    "environment": "seedling_pod",
+    "properties": ["humidity"],
+    "poll_interval_seconds": 60,
+    "driver_config": {
+      "address": "192.168.1.115"
+    }
   }
 }
 ```
 
-**Fields:**
+**Common fields:**
 
 | Field | Required | Description |
 |---|---|---|
 | `driver` | Yes | Driver name (must match a registered driver) |
-| `address` | Yes | Hardware address (BLE MAC, IP, etc.) |
 | `environment` | Yes | Which environment this sensor measures |
 | `properties` | Yes | What this sensor reports |
 | `poll_interval_seconds` | No | How often to read (default: 60) |
+| `driver_config` | Yes | Driver-specific configuration (see driver docs) |
+
+Driver-specific fields like hardware addresses, BLE MACs, authentication credentials, etc. go in `driver_config`. The daemon validates the common fields. The driver validates its own `driver_config` block — only the driver knows what it needs.
 
 ## Devices
 
-A device is a piece of equipment that can be turned on or off to affect the environment.
+A device is a piece of equipment that can be controlled to affect the environment.
 
 ```json
 "devices": {
   "veg_heater": {
     "driver": "kasa_plug",
-    "address": "192.168.1.101",
     "environment": "veg",
     "circuit": "shed_20a",
     "role": "heater",
-    "power_monitoring": true
+    "driver_config": {
+      "address": "192.168.1.100",
+      "plug_index": 2,
+      "power_monitoring": true
+    }
   },
   "veg_humidifier": {
     "driver": "vesync_humidifier",
-    "address": "192.168.1.102",
     "environment": "veg",
     "circuit": "shed_20a",
     "role": "humidifier",
-    "power_monitoring": false
+    "driver_config": {
+      "address": "192.168.1.102",
+      "mist_levels": 3
+    }
   },
   "exhaust_fan": {
     "driver": "kasa_plug",
-    "address": "192.168.1.103",
     "environment": "veg",
     "circuit": "shed_20a",
     "role": "exhaust",
-    "power_monitoring": true
-  },
-  "inter_fan": {
-    "driver": "kasa_plug",
-    "address": "192.168.1.104",
-    "environment": "veg",
-    "circuit": "shed_20a",
-    "role": "transfer",
-    "power_monitoring": true
-  },
-  "veg_light": {
-    "driver": "kasa_plug",
-    "address": "192.168.1.105",
-    "environment": "veg",
-    "circuit": "shed_20a",
-    "role": "light",
-    "power_monitoring": true
+    "driver_config": {
+      "address": "192.168.1.100",
+      "plug_index": 3,
+      "power_monitoring": true
+    }
   },
   "pod_heater": {
     "driver": "kasa_plug",
-    "address": "192.168.1.110",
     "environment": "seedling_pod",
     "circuit": "porch_15a",
     "role": "heater",
-    "power_monitoring": true
+    "driver_config": {
+      "address": "192.168.1.110",
+      "plug_index": 4,
+      "power_monitoring": true
+    }
   }
 }
 ```
 
-**Fields:**
+**Common fields:**
 
 | Field | Required | Description |
 |---|---|---|
 | `driver` | Yes | Driver name |
-| `address` | Yes | Hardware address (IP, etc.) |
 | `environment` | Yes | Which environment this device affects |
 | `circuit` | Yes | Which electrical circuit this device is on |
 | `role` | Yes | What this device does (see roles below) |
-| `power_monitoring` | No | Whether driver supports wattage reporting (default: false) |
+| `driver_config` | Yes | Driver-specific configuration (see driver docs) |
+
+Driver-specific fields go in `driver_config`. For a KASA plug on a power strip, that includes the IP address, the plug index, and whether it supports power monitoring. For a VeSync humidifier, it includes the IP address and the number of mist levels. Each driver validates its own block.
 
 **Roles:**
 
@@ -341,7 +359,9 @@ Safety configuration defines the absolute limits that the safety monitor enforce
     }
   },
   "sensor_stale_after_missed": 3,
-  "safety_loop_interval_seconds": 15
+  "safety_loop_interval_seconds": 15,
+  "battery_warning_percent": 20,
+  "battery_critical_percent": 5
 }
 ```
 
@@ -367,17 +387,41 @@ Safety configuration defines the absolute limits that the safety monitor enforce
 |---|---|
 | `sensor_stale_after_missed` | Number of consecutive missed polls before a sensor is marked stale |
 | `safety_loop_interval_seconds` | How often the safety monitor runs its evaluation loop |
+| `battery_warning_percent` | Battery level that triggers a warning alert. Default: 20 |
+| `battery_critical_percent` | Battery level that triggers a critical alert. Default: 5 |
 
 ## Units
 
-All temperatures in the config are Fahrenheit. All humidity values are relative humidity (%). Spriggler converts internally as needed for physics calculations.
+Units are declared in the config header. The user works in whatever units they think in. Spriggler converts internally as needed for physics calculations.
 
-The user works in the units they think in. The physics model works in whatever units the equations require. Conversion is Spriggler's problem, not the user's.
+```json
+{
+  "version": "0.3",
+  "name": "My Grow",
+  "units": {
+    "temperature": "F",
+    "humidity": "%RH"
+  },
+  ...
+}
+```
+
+**Supported temperature units:**
+
+| Value | Meaning |
+|---|---|
+| `"F"` | Fahrenheit |
+| `"C"` | Celsius |
+
+All temperature values throughout the config — targets, safety limits, rate-of-change thresholds — are interpreted in the declared unit. Logs and status output use the same unit.
+
+The physics model works in SI internally. Conversion is Spriggler's problem, not the user's.
 
 ## Validation
 
 On startup, Spriggler validates the config:
 
+- `units.temperature` is present and is a supported value (`"F"` or `"C"`)
 - All sensor and device IDs referenced in environments, schedules, and safety exist
 - All circuit references exist
 - All environment references in connections exist

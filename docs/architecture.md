@@ -64,6 +64,7 @@ The safety monitor is a first-class component, separate from and superior to the
 - **Rate of change.** A 20°F spike in 5 minutes is a hardware failure, not weather. Rapid change in any property triggers investigation and possible shutdown.
 - **Device-sensor coherence.** If a device claims ON and the expected sensor effect doesn't appear within a reasonable window, the device is presumed failed. If a device claims OFF and the sensor shows its signature effect, the device is presumed stuck on.
 - **Sensor liveness.** If a sensor stops reporting, the safety monitor cannot verify safety. Affected devices enter safe state until sensor data resumes.
+- **Sensor battery.** If a sensor reports a `battery` value, the safety monitor tracks it. Warning at 20% (default). Critical alert at 5% (default). A dead battery is a predictable sensor failure — the safety monitor warns before it becomes a sensor liveness event that forces devices to safe state.
 
 **What it can do:**
 
@@ -89,6 +90,21 @@ The safety monitor is a first-class component, separate from and superior to the
 ### Sensors
 
 Sensor drivers read physical state. Each driver knows how to talk to specific hardware (Govee BLE thermometers, etc.) and exposes a uniform interface: `read() → dict of property values`.
+
+Sensor drivers read physical hardware and return measurements. Each driver returns a dict with all values the hardware reports, in SI units. The keys follow a standard taxonomy (`temperature`, `humidity`, `battery`, etc.).
+
+```python
+# Example return from a Govee H5100 driver
+{
+    "temperature": 295.37,   # Kelvin
+    "humidity": 63.2,        # %RH (already dimensionless)
+    "battery": 87            # percent
+}
+```
+
+**Drivers always return SI units.** This is the conversion boundary. Drivers return SI. The daemon converts to user units (from the config's `units` block) at the display and logging boundary. The physics engine works in SI natively. If a value came from a driver, it's SI. If it's in the config or the UI, it's user units. No ambiguity.
+
+**Drivers return everything the hardware reports.** The driver doesn't consult the config to decide what to return — it returns the full dict. The daemon routes properties listed in the sensor's `properties` field to the environment model and solver. Properties not in anyone's target list or safety limits (like battery) flow through to logs, diagnostics, and the safety monitor. If the hardware starts reporting a new property, it appears in logs automatically.
 
 **The ambient sensor is required.** Without knowing the outside temperature and humidity, the physics model cannot compute envelope loss rates, which means it cannot predict the net effect of any device. Place the ambient sensor outside of all controlled environments — outdoors, or in the room that contains a grow tent.
 
