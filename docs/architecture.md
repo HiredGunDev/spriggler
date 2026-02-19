@@ -458,13 +458,86 @@ When passive recalibration detects consistent prediction errors:
 4. Widen prediction tolerance to avoid false safety alerts while drift is within manageable bounds
 5. If drift exceeds manageable bounds, recommend physical inspection and potential recalibration
 
+## Development Philosophy
+
+### Test-Driven Development
+
+Spriggler uses a strong TDD approach. Every component has a clearly defined interface and contract, and every contract is tested before implementation begins.
+
+**Why TDD is critical for this project:**
+
+- The architecture is designed for third-party driver development. Contributors writing drivers for new hardware need confidence that their code meets the contract and won't break the system.
+- The safety monitor makes life-or-death decisions for what's in the controlled environments. Its behavior under every failure mode must be verified.
+- The solver's correctness can be validated against known physics. If the solver says "run the heater for 10 minutes," we can compute analytically whether that's right.
+- The system runs unattended on remote hardware. Bugs discovered in production mean dead plants, ruined fermentation, or worse. Catch them in tests.
+
+### Driver Conformance Test Harness
+
+Any driver — sensor or device — can be validated against the standard contract by running the conformance test suite. A contributor writes a driver, plugs it into the harness, and gets a pass/fail report.
+
+**Sensor driver conformance:**
+
+- `read()` returns a dict
+- All keys are in the standard taxonomy
+- All values are in SI units
+- Temperature is in Kelvin, not Celsius, not Fahrenheit
+- Humidity is in %RH
+- Battery is in percent (0-100)
+- Driver handles hardware timeout without crashing
+- Driver handles garbage data without crashing (returns error, not garbage values)
+- Driver does not block indefinitely
+
+**Device driver conformance:**
+
+- `turn_on()` and `turn_off()` accept no arguments and return success/failure
+- `is_on()` returns a boolean
+- `get_power()` returns watts or None if not supported
+- `supports_countdown()` returns a boolean
+- If `supports_countdown()` is True, `set_countdown(seconds, target_state)` accepts valid arguments
+- Driver handles network timeout gracefully
+- Driver handles device-not-found gracefully
+
+**Safety monitor test scenarios:**
+
+- Temperature exceeds absolute max → devices enter safe state
+- Temperature drops below absolute min → devices enter safe state
+- Rate of change exceeds threshold → alert and investigation
+- Device-sensor coherence failure → device lockout
+- Sensor goes stale → affected devices enter safe state
+- Battery warning threshold → alert
+- Battery critical threshold → alert with urgency
+- Multiple simultaneous failures → correct prioritization
+
+**Solver test scenarios:**
+
+- Single environment, single device → correct device state
+- Single environment, constrained circuit → respects amperage limit
+- Multi-environment, shared resources → cost-function-driven allocation
+- Device failure, cross-environment recovery → discovers alternative paths
+- All targets satisfied → minimum energy solution
+- Known physics scenarios with analytical solutions → solver matches within tolerance
+
+### Development Workflow
+
+```
+1. Define the interface and contract
+2. Write the conformance/unit tests
+3. Implement the component
+4. Tests pass
+5. Integration test against adjacent components
+6. Review, commit
+```
+
+Each session starts with: "Here's architecture.md and README.md. We're working on spriggler 0.3. Today I want to work on X."
+
 ## What Carries Forward from 0.2
 
 **Keep (with review):**
 
-- Sensor drivers (Govee BLE)
+- Sensor drivers (Govee BLE — replace hand-rolled parsing with govee-ble library)
 - Device drivers (KASA, VeSync)
 - KASA hardware countdown timer management (proven, critical safety feature)
+- BLE scanning via bleak (proven, reliable)
 - Power state management
 - Structured logging format
 
@@ -474,6 +547,7 @@ When passive recalibration detects consistent prediction errors:
 - Policy-based effects
 - Per-property evaluation
 - Sequential command issuing
+- Hand-rolled Govee BLE advertisement parsing (use govee-ble library instead)
 
 ## Decisions Made
 
@@ -484,12 +558,17 @@ When passive recalibration detects consistent prediction errors:
 - **Envelope characterization:** Derive physical constants (effective R-value / envelope conductance) that hold across seasons, not snapshot coefficients that expire. 48-hour minimum initial calibration with two daily cycles.
 - **Recalibration:** Passive and continuous during normal operation. Drift is treated as diagnostic information (something physical changed) rather than a calibration problem to silently correct.
 - **Ambient sensor:** Required, not optional. The physics model cannot function without knowing boundary conditions.
+- **Sensor driver contract:** Returns dict with all reported values in SI units. Standard key taxonomy. One driver per physical sensor, no splitting by property.
+- **Driver-specific config:** Common fields (driver, environment, circuit, role) validated by daemon. Driver-specific fields in `driver_config` block validated by driver.
+- **Domain-agnostic solver:** The solver knows physics and cost functions. It knows nothing about plants, fish, fermentation, or any specific application. Domain knowledge lives in the config.
+- **Govee BLE parsing:** Use govee-ble library (pip install govee-ble) instead of hand-rolled parsing. Proven across thousands of installations, handles sub-zero temperatures correctly.
+- **Development approach:** Test-driven. Driver conformance harness for third-party contributors.
 
 ## Open Questions
 
 - Solver implementation: off-the-shelf optimizer or custom?
-- Calibration granularity: how many data points per device?
-- Schedule format: same as 0.2 or revised?
+- Graduated device control: VeSync humidifier has multiple mist levels, not just on/off. How does the solver handle non-binary device states?
+- Interval-based scheduling: periodic timed pulses for irrigation, CO2 injection, sampling. Design settled conceptually, needs schema definition.
 - Web UI protocol: REST API, WebSocket, or pure file-based?
 - Alert/notification mechanism: log-only, email, SMS, push?
 
