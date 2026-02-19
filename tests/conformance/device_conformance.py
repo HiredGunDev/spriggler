@@ -139,6 +139,59 @@ class DeviceConformanceTests:
         except DeviceCommandError:
             pass  # Expected when hardware isn't available
 
+    # ── Graduated control tests ──────────────────────────────────────────
+
+    def test_available_states_is_list(self, driver):
+        """get_available_states() must return a list."""
+        states = driver.get_available_states()
+        assert isinstance(states, list)
+
+    def test_available_states_has_off(self, driver):
+        """First state must be 'off'."""
+        states = driver.get_available_states()
+        assert len(states) >= 2
+        assert states[0] == 'off'
+
+    def test_available_states_are_strings(self, driver):
+        """All states must be strings."""
+        for state in driver.get_available_states():
+            assert isinstance(state, str), f"State {state!r} is not a string"
+
+    def test_available_states_no_duplicates(self, driver):
+        """States must be unique."""
+        states = driver.get_available_states()
+        assert len(states) == len(set(states)), f"Duplicate states: {states}"
+
+    def test_set_state_off(self, driver):
+        """set_state('off') should succeed and match turn_off behavior."""
+        try:
+            result = driver.set_state('off')
+            assert isinstance(result, bool)
+        except DeviceCommandError:
+            pass
+
+    def test_set_state_max(self, driver):
+        """set_state() with the last (max) state should succeed."""
+        states = driver.get_available_states()
+        try:
+            result = driver.set_state(states[-1])
+            assert isinstance(result, bool)
+        except DeviceCommandError:
+            pass
+
+    def test_set_state_invalid_raises(self, driver):
+        """set_state() with an invalid state must raise ValueError."""
+        with pytest.raises(ValueError):
+            driver.set_state('INVALID_STATE_NAME')
+
+    def test_get_current_state_in_available(self, driver):
+        """get_current_state() must return one of get_available_states()."""
+        states = driver.get_available_states()
+        current = driver.get_current_state()
+        assert current in states, (
+            f"Current state '{current}' not in available states: {states}"
+        )
+
     # ── Power monitoring tests ───────────────────────────────────────────
 
     def test_power_none_if_not_supported(self, driver, has_power_monitoring):
@@ -161,3 +214,4 @@ class DeviceConformanceTests:
         """validate_config() should raise ValueError for invalid config."""
         with pytest.raises(ValueError):
             driver.validate_config(driver_config_invalid)
+

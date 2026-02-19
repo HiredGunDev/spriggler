@@ -42,29 +42,52 @@ class MockSensor(SensorDriver):
         return "mock_sensor"
 
 
-# ── Mock device driver (compliant, with countdown) ──────────────────────────
+# ── Mock device driver (compliant, graduated) ───────────────────────────────
 
 class MockDevice(DeviceDriver):
-    """A fake device that tracks state. Fully compliant."""
+    """A fake device with configurable states. Fully compliant.
+
+    Accepts a 'states' list in driver_config to control graduation.
+    Defaults to ['off', 'low', 'mid', 'high'] if not specified.
+    """
 
     def __init__(self, driver_config: dict) -> None:
         self._config = driver_config
-        self._on = False
+        self._states = driver_config.get('states', ['off', 'low', 'mid', 'high'])
+        self._state = 'off'
         self._countdown = None
 
     def turn_on(self) -> bool:
-        self._on = True
+        self._state = self._states[-1]
         return True
 
     def turn_off(self) -> bool:
-        self._on = False
+        self._state = 'off'
         return True
 
     def is_on(self) -> bool:
-        return self._on
+        return self._state != 'off'
+
+    def get_available_states(self) -> list[str]:
+        return list(self._states)
+
+    def set_state(self, state: str) -> bool:
+        if state not in self._states:
+            raise ValueError(
+                f"Invalid state '{state}'. Available: {self._states}"
+            )
+        self._state = state
+        return True
+
+    def get_current_state(self) -> str:
+        return self._state
 
     def get_power(self) -> float | None:
-        return 1500.0 if self._on else 0.0
+        # Linear interpolation: off=0, max=1500W
+        if self._state == 'off':
+            return 0.0
+        idx = self._states.index(self._state)
+        return 1500.0 * idx / (len(self._states) - 1)
 
     def supports_countdown(self) -> bool:
         return True
@@ -108,9 +131,10 @@ class TestMockSensorConformance(SensorConformanceTests):
         return {"address": "not-a-mac"}
 
 
-# ── Conformance tests for the mock device ────────────────────────────────────
+# ── Conformance tests for graduated device (4 states) ────────────────────────
 
-class TestMockDeviceConformance(DeviceConformanceTests):
+class TestGraduatedDeviceConformance(DeviceConformanceTests):
+    """Device with off/low/mid/high states, countdown, and power monitoring."""
 
     @pytest.fixture
     def driver(self):
@@ -122,7 +146,7 @@ class TestMockDeviceConformance(DeviceConformanceTests):
 
     @pytest.fixture
     def driver_config_invalid(self):
-        return {}  # Missing 'address'
+        return {}
 
     @pytest.fixture
     def has_countdown(self):
@@ -131,3 +155,37 @@ class TestMockDeviceConformance(DeviceConformanceTests):
     @pytest.fixture
     def has_power_monitoring(self):
         return True
+
+
+# ── Conformance tests for binary device (2 states, same mock) ────────────────
+
+class TestBinaryDeviceConformance(DeviceConformanceTests):
+    """Same MockDevice, configured with only ['off', 'on'].
+
+    Proves that a two-state device is just a graduated device with
+    two values. No special casing needed.
+    """
+
+    @pytest.fixture
+    def driver(self):
+        return MockDevice({
+            "address": "192.168.1.200",
+            "states": ["off", "on"]
+        })
+
+    @pytest.fixture
+    def driver_config_valid(self):
+        return {"address": "192.168.1.200"}
+
+    @pytest.fixture
+    def driver_config_invalid(self):
+        return {}
+
+    @pytest.fixture
+    def has_countdown(self):
+        return True
+
+    @pytest.fixture
+    def has_power_monitoring(self):
+        return True
+

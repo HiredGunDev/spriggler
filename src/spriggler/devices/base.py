@@ -7,6 +7,7 @@ Contract:
     - turn_on() and turn_off() return True on success, False on failure
     - is_on() returns a boolean reflecting last known state
     - get_power() returns watts as a float, or None if not supported
+    - Graduated control is opt-in via get_available_states()
     - Countdown support is opt-in via supports_countdown()
     - All methods must handle network/hardware errors gracefully
     - No method should block indefinitely
@@ -21,7 +22,23 @@ class DeviceCommandError(Exception):
 
 
 class DeviceDriver(ABC):
-    """Base class for all device drivers."""
+    """Base class for all device drivers.
+
+    Devices have discrete states. The simplest device has two states:
+    'off' and 'on'. A graduated device might have ['off', 'low', 'mid', 'high']
+    or ['off', '500W', '800W', '1000W', '1500W'].
+
+    The solver enumerates feasible combinations of device states across
+    all devices. Each state has a calibrated energy contribution learned
+    during calibration. The solver picks the combination with lowest cost.
+
+    State naming convention:
+        - 'off' is always the first state (index 0)
+        - 'on' is always the last state (max output)
+        - Intermediate states are ordered from lowest to highest output
+        - State names are strings, chosen by the driver
+        - The solver doesn't interpret names — it uses calibrated values
+    """
 
     @abstractmethod
     def __init__(self, driver_config: dict) -> None:
@@ -36,6 +53,69 @@ class DeviceDriver(ABC):
                         or contains invalid values.
         """
         pass
+
+    def get_available_states(self) -> list[str]:
+        """Return the ordered list of states this device supports.
+
+        Default is ['off', 'on'] for simple binary devices. Override
+        for graduated devices.
+
+        States must be ordered from lowest output to highest output.
+        The first state must be 'off'. The last state should be the
+        maximum output state.
+
+        Examples:
+            Simple plug:       ['off', 'on']
+            VeSync humidifier: ['off', 'low', 'mid', 'high']
+            Smart heater:      ['off', '500W', '800W', '1000W', '1500W']
+            Damper servo:      ['off', '25%', '50%', '75%', '100%']
+
+        Returns:
+            List of state name strings, ordered low to high.
+        """
+        return ['off', 'on']
+
+    def set_state(self, state: str) -> bool:
+        """Set the device to a specific state.
+
+        For binary devices, this is equivalent to turn_on()/turn_off().
+        For graduated devices, this sets the specific output level.
+
+        The default implementation maps 'off' to turn_off() and
+        anything else to turn_on(). Graduated drivers must override
+        this to handle intermediate states.
+
+        Args:
+            state: One of the strings from get_available_states().
+
+        Returns:
+            True if the command was sent successfully, False otherwise.
+
+        Raises:
+            ValueError: If state is not in get_available_states().
+            DeviceCommandError: On hardware/network failure.
+        """
+        available = self.get_available_states()
+        if state not in available:
+            raise ValueError(
+                f"Invalid state '{state}' for {self.driver_name}. "
+                f"Available: {available}"
+            )
+        if state == 'off':
+            return self.turn_off()
+        else:
+            return self.turn_on()
+
+    def get_current_state(self) -> str:
+        """Return the current state of the device.
+
+        For binary devices, returns 'off' or 'on' based on is_on().
+        Graduated drivers should override to return the specific level.
+
+        Returns:
+            One of the strings from get_available_states().
+        """
+        return 'on' if self.is_on() else 'off'
 
     @abstractmethod
     def turn_on(self) -> bool:
