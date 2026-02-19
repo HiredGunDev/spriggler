@@ -12,9 +12,6 @@ Configuration is JSON. The file lives in `config/spriggler.json` by default, or 
 {
   "version": "0.3",
   "name": "My Grow",
-  "units": {
-    "temperature": "F"
-  },
 
   "environments": { ... },
   "sensors": { ... },
@@ -373,36 +370,14 @@ Safety configuration defines the absolute limits that the safety monitor enforce
 
 ## Units
 
-Units are declared in the config header. The user works in whatever units they think in. Spriggler converts internally as needed for physics calculations.
+All temperatures in the config are Fahrenheit. All humidity values are relative humidity (%). Spriggler converts internally as needed for physics calculations.
 
-```json
-{
-  "version": "0.3",
-  "name": "My Grow",
-  "units": {
-    "temperature": "F",
-    "humidity": "%RH"
-  },
-  ...
-}
-```
-
-**Supported temperature units:**
-
-| Value | Meaning |
-|---|---|
-| `"F"` | Fahrenheit |
-| `"C"` | Celsius |
-
-All temperature values throughout the config — targets, safety limits, rate-of-change thresholds — are interpreted in the declared unit. Logs and status output use the same unit.
-
-The physics model works in SI internally. Conversion is Spriggler's problem, not the user's.
+The user works in the units they think in. The physics model works in whatever units the equations require. Conversion is Spriggler's problem, not the user's.
 
 ## Validation
 
 On startup, Spriggler validates the config:
 
-- `units.temperature` is present and is a supported value (`"F"` or `"C"`)
 - All sensor and device IDs referenced in environments, schedules, and safety exist
 - All circuit references exist
 - All environment references in connections exist
