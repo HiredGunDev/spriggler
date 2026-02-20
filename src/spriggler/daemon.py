@@ -23,7 +23,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from spriggler.config.loader import load_config, ConfigError
-from spriggler.drivers.registry import get_sensor_driver, get_device_driver
+from spriggler.sensors.registry import get_sensor_driver
+from spriggler.devices.registry import get_device_driver
 from spriggler.physics.model import make_solver_predict_fn
 from spriggler.safety.monitor import SafetyMonitor
 from spriggler.schedule import resolve_all_targets, resolve_all_device_overrides
