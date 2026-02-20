@@ -30,18 +30,18 @@ The core insight: environmental control is a thermodynamics problem. Temperature
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                     CLI / Web UI                    │
+│                     CLI / Web UI                     │
 ├─────────────────────────────────────────────────────┤
-│            config/    calibration/    logs/         │
+│            config/    calibration/    logs/          │
 ├─────────────────────────────────────────────────────┤
-│                   SPRIGGLER DAEMON                  │
-│                                                     │
-│  ┌────────────────────────────────────────────────┐ │
-│  │              SAFETY MONITOR                    │ │
-│  │  Independent loop. Reads sensors. Vetoes.      │ │
-│  │  Cannot be overridden by solver.               │ │
-│  └────────────────────────────────────────────────┘ │
-│                                                     │
+│                   SPRIGGLER DAEMON                   │
+│                                                      │
+│  ┌────────────────────────────────────────────────┐  │
+│  │              SAFETY MONITOR                     │  │
+│  │  Independent loop. Reads sensors. Vetoes.       │  │
+│  │  Cannot be overridden by solver.                │  │
+│  └────────────────────────────────────────────────┘  │
+│                                                      │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐  │
 │  │ Sensors  │ │ Devices  │ │ Physics  │ │ Solver │  │
 │  │ Drivers  │ │ Drivers  │ │  Model   │ │        │  │
@@ -104,6 +104,33 @@ Sensor drivers read physical hardware and return measurements. Each driver retur
 ```
 
 **Drivers always return SI units.** This is the conversion boundary. Drivers return SI. The daemon converts to user units (from the config's `units` block) at the display and logging boundary. The physics engine works in SI natively. If a value came from a driver, it's SI. If it's in the config or the UI, it's user units. No ambiguity.
+
+## Unit Convention
+
+**All internal values are SI.** Temperature is Kelvin. Humidity is %RH (already dimensionless). This is a non-negotiable design decision.
+
+**The conversion boundary is `load_config()`.** The config file is authored in user units (°F or °C). Validation runs in user units so error messages make sense to the user. After validation, `load_config()` converts all temperature values to Kelvin. Everything downstream — physics model, solver, safety monitor, calibration data, stored logs — operates in SI exclusively.
+
+**Why this matters:** Calibration data must survive a unit change. If a user switches their config from °C to °F (or sells the system to someone who does), all learned coefficients, envelope conductance values, and device contributions remain valid because they were never stored in user units.
+
+**What gets converted at load time:**
+- Schedule targets (min, max, ideal) for temperature
+- Safety limits (absolute_min, absolute_max) for temperature
+- Rate of change thresholds for temperature
+
+**What does NOT get converted:**
+- Humidity (%RH is dimensionless)
+- Battery (percent)
+- Signal strength (dBm)
+- Calibration data (always SI)
+- Log data on disk (always SI)
+
+**Display surfaces convert back for humans:**
+- Log messages: `format_temp(297.04, 'F')` → `"75.0 F"`
+- Alerts: always include the unit label
+- Any future web UI or dashboard
+
+The original user unit is preserved in `config['_original_unit']` for display formatting. The unit label always travels with the displayed value. Never "75.0" alone — always "75.0 F".
 
 **Drivers return everything the hardware reports.** The driver doesn't consult the config to decide what to return — it returns the full dict. The daemon routes properties listed in the sensor's `properties` field to the environment model and solver. Properties not in anyone's target list or safety limits (like battery) flow through to logs, diagnostics, and the safety monitor. If the hardware starts reporting a new property, it appears in logs automatically.
 
@@ -449,6 +476,8 @@ When a sensor stops responding:
 
 **No sensor data = no device operation.** The system will not blindly control devices without feedback.
 
+**Auto-recovery:** The daemon does not shut down during a sensor stale event. It continues listening. When valid sensor data resumes, the safety monitor clears the stale flag, the solver re-engages, and normal operation resumes automatically. Transient BLE dropouts, Bluetooth stack hiccups, and brief interference resolve themselves without human intervention.
+
 ### Calibration Drift
 
 When passive recalibration detects consistent prediction errors:
@@ -563,12 +592,13 @@ Each session starts with: "Here's architecture.md and README.md. We're working o
 - **Driver-specific config:** Common fields (driver, environment, circuit, role) validated by daemon. Driver-specific fields in `driver_config` block validated by driver.
 - **Domain-agnostic solver:** The solver knows physics and cost functions. It knows nothing about plants, fish, fermentation, or any specific application. Domain knowledge lives in the config.
 - **Govee BLE parsing:** Use govee-ble library (pip install govee-ble) instead of hand-rolled parsing. Proven across thousands of installations, handles sub-zero temperatures correctly.
-- **Development approach:** Test-driven. Driver conformance harness for third-party contributors.
+- **Development approach:** Test-driven. Driver conformance harness for third-party driver contributors.
+- **Solver implementation:** Brute-force enumeration over all feasible device state combinations. No scipy or external optimizer. Problem space is small enough (~4K-100K combinations for realistic setups) to evaluate exhaustively in under 50ms. Results are fully explainable: "tried N combinations, M within circuit limits, this one lowest cost." If future setups grow beyond feasible enumeration time, heuristics or branch pruning can be added without changing the interface.
+- **Graduated device control:** All devices have discrete states. Binary devices are graduated devices with two states (`['off', 'on']`). No special casing. A VeSync humidifier reports `['off', 'low', 'mid', 'high']`. The solver enumerates all levels. Analog devices are discretized to meaningful steps; the physics model computes optimal continuous settings analytically in a second phase if needed.
+- **Internal units:** All computation, calibration data, and stored logs use SI (Kelvin for temperature, %RH for humidity). User units appear only in the config file (converted to SI at load time) and display surfaces (logs to console, alerts, UI). Calibration data survives a user unit change because it was never stored in user units.
 
 ## Open Questions
 
-- Solver implementation: off-the-shelf optimizer or custom?
-- Graduated device control: VeSync humidifier has multiple mist levels, not just on/off. How does the solver handle non-binary device states?
 - Interval-based scheduling: periodic timed pulses for irrigation, CO2 injection, sampling. Design settled conceptually, needs schema definition.
 - Web UI protocol: REST API, WebSocket, or pure file-based?
 - Alert/notification mechanism: log-only, email, SMS, push?

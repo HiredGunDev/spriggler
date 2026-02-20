@@ -16,11 +16,17 @@ class ConfigError(Exception):
 def load_config(config: dict | str | Path) -> dict:
     """Load and validate a Spriggler configuration.
 
+    Validates the config in user units (so error messages are
+    meaningful to the user), then converts all values to SI for
+    internal use.
+
     Args:
         config: Either a dict (already parsed) or a path to a JSON file.
 
     Returns:
-        The validated configuration dict.
+        The validated configuration dict with all values in SI units.
+        config['_original_unit'] preserves the user's unit preference
+        for display formatting.
 
     Raises:
         ConfigError: If the configuration is invalid.
@@ -33,6 +39,11 @@ def load_config(config: dict | str | Path) -> dict:
             config = json.load(f)
 
     _validate(config)
+
+    # Convert to SI after validation so error messages use user units
+    from spriggler.units import convert_config_to_si
+    config = convert_config_to_si(config)
+
     return config
 
 
