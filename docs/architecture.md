@@ -26,30 +26,59 @@ The core insight: environmental control is a thermodynamics problem. Temperature
 
 **Sensors are truth. Devices lie.** Device self-reported status is informational, not authoritative. A heater that claims to be on while temperature drops is a failed heater. Safety decisions are always based on sensor readings, never on device state alone.
 
+## Executables
+
+Spriggler has two entry points with a clean separation of concerns:
+
+**`spriggler-daemon`** — the daemon. Runs forever, no interactivity. Reads config, reads calibration data, runs the control loop, writes status and logs. The only communication it accepts is a changed config file (detected by mtime check each cycle) and SIGTERM to stop.
+
+**`spriggler <command>`** — the CLI. Everything else:
+
+```
+spriggler calibrate [--device <id>]   Run calibration experiments
+spriggler check                       Validate config, exit
+spriggler status                      Pretty-print status.json in user units
+spriggler explain [--cycle <n>]       Explain a solver decision from logs
+spriggler reload                      Touch config mtime, daemon picks it up
+```
+
+The daemon and CLI share the same libraries (config loader, drivers, physics model, units) but have completely different control flow. The daemon is a loop. The CLI is interactive commands.
+
+**No IPC.** The daemon and CLI never communicate directly. All coordination is through the filesystem. This means a UI crash cannot take down the daemon. It also means any tool that can read and write files can interact with Spriggler — vim, a web UI, a cron job, a shell script.
+
 ## System Components
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                     CLI / Web UI                     │
-├─────────────────────────────────────────────────────┤
-│            config/    calibration/    logs/          │
-├─────────────────────────────────────────────────────┤
-│                   SPRIGGLER DAEMON                   │
-│                                                      │
-│  ┌────────────────────────────────────────────────┐  │
-│  │              SAFETY MONITOR                     │  │
-│  │  Independent loop. Reads sensors. Vetoes.       │  │
-│  │  Cannot be overridden by solver.                │  │
-│  └────────────────────────────────────────────────┘  │
-│                                                      │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐  │
-│  │ Sensors  │ │ Devices  │ │ Physics  │ │ Solver │  │
-│  │ Drivers  │ │ Drivers  │ │  Model   │ │        │  │
-│  └──────────┘ └──────────┘ └──────────┘ └────────┘  │
-└─────────────────────────────────────────────────────┘
-         │              │
-         ▼              ▼
-   [BLE, WiFi]    [KASA, VeSync, etc.]
+┌────────────────────────────────────────────────────────────┐
+│                   spriggler <command>                       │
+│          calibrate │ check │ status │ explain               │
+├────────────────────┼───────────────────────────────────────┤
+│                    │                                        │
+│                    ▼ writes                                 │
+│   ┌──────────┐  ┌──────────┐  ┌──────────┐                │
+│   │ config/  │  │ calibr/  │  │ status   │                │
+│   │  .json   │  │  .json   │  │  .json   │                │
+│   └────┬─────┘  └────┬─────┘  └────┬─────┘                │
+│        │ reads        │ reads       │ writes                │
+│        ▼              ▼             ▼                       │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                SPRIGGLER-DAEMON                      │   │
+│  │                                                      │   │
+│  │  ┌────────────────────────────────────────────────┐  │   │
+│  │  │              SAFETY MONITOR                     │  │   │
+│  │  │  Independent loop. Reads sensors. Vetoes.       │  │   │
+│  │  │  Cannot be overridden by solver.                │  │   │
+│  │  └────────────────────────────────────────────────┘  │   │
+│  │                                                      │   │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐  │   │
+│  │  │ Sensors  │ │ Devices  │ │ Physics  │ │ Solver │  │   │
+│  │  │ Drivers  │ │ Drivers  │ │  Model   │ │        │  │   │
+│  │  └──────────┘ └──────────┘ └──────────┘ └────────┘  │   │
+│  └─────────────────────────────────────────────────────┘   │
+│           │              │                                  │
+│           ▼              ▼                                  │
+│     [BLE, WiFi]    [KASA, VeSync, etc.]                    │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ### Safety Monitor
@@ -150,6 +179,30 @@ Devices that support power monitoring (KASA) report real-time wattage. This feed
 
 **Device status is advisory, not authoritative.** The system always validates device behavior against sensor readings. A heater reporting ON with no temperature change is flagged. A heater reporting OFF with rising temperature is flagged.
 
+### Manual Override
+
+The daemon queries actual device state each cycle. If a device's state differs from what the daemon last commanded, one of two things happened: the device malfunctioned, or a human pressed the button.
+
+The `manual_override_minutes` field in the device config controls the response:
+
+- **Missing or 0:** The daemon owns this device absolutely. State mismatch triggers an immediate correction command and a log entry. This is appropriate for heaters, exhaust fans, and any device where unexpected state changes are dangerous or undesirable.
+- **Positive value:** The daemon recognizes the mismatch as a human override. It starts a hold timer for N minutes, logs the override, and the solver treats the device as forced to whatever state the human set. When the timer expires, the solver resumes control. This is appropriate for lights, circulation fans, and other devices where brief manual control is normal and safe.
+
+The safety monitor has veto authority over manual overrides. If a manually-overridden device causes a safety limit breach, safety kills it regardless.
+
+Repeated state mismatch corrections on a device with `manual_override_minutes: 0` are a diagnostic signal — the command isn't sticking (network issue), the device is malfunctioning, or someone is pressing buttons they shouldn't be. All worth logging and potentially alerting on.
+
+```json
+"chamber_light": {
+    "manual_override_minutes": 30
+},
+"chamber_heater": {
+    "manual_override_minutes": 0
+}
+```
+
+No CLI or computer access is needed to perform a manual override. Walk up to the device, press the button, and the daemon notices and backs off.
+
 ### Physics Model
 
 The physics model has two layers:
@@ -228,71 +281,132 @@ The solver proposes. The safety monitor disposes.
 
 Calibration derives physical constants of the system — not snapshots of behavior at one point in time. The goal is to characterize properties that remain valid across seasons and conditions.
 
-#### Phase 1: Envelope Characterization (48+ hours, environment empty, all devices off)
+Calibration is run by `spriggler calibrate`, not the daemon. The daemon should be stopped during calibration — two processes commanding the same hardware is a recipe for confusion. The calibration tool checks for a running daemon and warns if one is detected.
 
-The most important thing calibration learns is the **effective R-value** of each environment's envelope. This is a physical constant of the structure — it doesn't change with the seasons, only with physical modifications (adding insulation, breaking a seal, leaving a vent open).
+#### Why Active, Not Passive
 
-Heat transfer through an envelope follows:
+The original design called for 48 hours of passive observation with all devices off, watching the environment drift toward ambient. This doesn't work in practice. If a shed has been soaking at ambient for a week and today's ambient swing is 10 degrees, the interior drifts a few degrees over 24 hours. The signal-to-noise ratio is terrible. You're trying to fit a conductance coefficient from tiny deltas buried in sensor noise.
+
+The solution: use the devices themselves to create signal. Turn the heater on, push the environment 30 degrees above ambient, shut it off. Now you have a 30-degree differential and an exponential decay curve back toward ambient. That curve is rich with information — the time constant gives you the envelope conductance directly. And you characterized the heater at the same time, because you watched the temperature rise while measuring power draw.
+
+One experiment characterizes both a device and the envelope simultaneously.
+
+#### The Calibration Experiment
+
+For each device in an environment, `spriggler calibrate` runs:
+
+**Rise phase (device characterization):**
+
+1. Record ambient and interior conditions. Record starting differential.
+2. Turn device on. Record power draw if hardware supports it (KASA plugs report real watts).
+3. Watch the affected property change. For a heater: temperature rises. For a humidifier: humidity rises.
+4. Continue until a target differential is reached or safety limits approach.
+5. Record the rise curve: timestamped (property_value, ambient_value, power_watts) tuples.
+
+**Decay phase (envelope characterization):**
+
+1. Turn device off.
+2. Watch the property decay back toward ambient. This is a clean exponential governed by the envelope conductance.
+3. Continue until the property is within a few degrees of ambient or the decay rate has stabilized.
+4. Record the decay curve: timestamped (property_value, ambient_value) tuples.
+
+**What falls out of the math:**
+
+- **Device energy contribution:** From the rise phase. How many degrees (or %RH) per unit time, at what power consumption. Corrected for concurrent envelope loss during the rise.
+- **Envelope conductance:** From the decay phase. The time constant of the exponential decay, combined with the known differential, gives the aggregate thermal conductance of the space.
+- **Cross-validation:** The envelope conductance derived from the decay phase should be consistent with the envelope loss observed during the rise phase (the device has to overcome envelope loss to raise the temperature). If they disagree, something nonlinear is happening.
+
+**Duration:** A heater cycle might be 20-30 minutes up, 45-90 minutes back down depending on the envelope. A few hours characterizes every device plus the envelope, with high-signal data across a wide temperature range. Compare this to 48 hours of watching nothing drift toward nothing.
+
+#### Device Types
+
+**Heating/cooling devices (heaters, exhaust fans, A/C):** Straightforward rise/decay on temperature. Run device, measure rise rate and power. Shut down, measure decay.
+
+**Humidity devices (humidifiers, dehumidifiers):** Same pattern on humidity. Run device, watch humidity change, shut down, watch decay. Moisture dynamics are slower than thermal — expect longer experiment times.
+
+**Lights:** Lights are primarily scheduled, not solver-controlled. But they have thermal side effects. Calibration turns lights on, measures the thermal contribution over time. This lets the solver account for "lights on adds 3 degrees" when computing heating/cooling needs.
+
+**Air movement devices (inter-environment fans):** These don't add or remove energy — they redistribute it. Calibration must watch both source and destination environments simultaneously. Turn on the veg→flower fan, watch veg temperature drop and flower temperature rise. The transfer rate depends on the differential between the two spaces. For reversible fans (`['off', 'forward', 'reverse']`), each direction is calibrated independently — duct geometry may not be symmetric.
+
+**Graduated devices:** Each level is a separate experiment. A humidifier with `['off', 'low', 'mid', 'high']` gets three rise/decay cycles. The solver needs to know the contribution at each level, not just max.
+
+#### Power Consumption
+
+If the hardware reports power draw (KASA plugs do), calibration records actual watts under load for every device state. This data feeds:
+
+- **Calibration accuracy:** Real watts vs nameplate watts. A "1500W" heater pulling 1487W is normal. One pulling 900W has a failing element — worth flagging immediately.
+- **Energy cost modeling:** The solver can prefer lower-energy solutions when multiple combinations produce similar environmental outcomes.
+- **Degradation tracking:** Power draw that changes over time is a diagnostic signal. A heater pulling 15% less than at calibration suggests element degradation.
+
+#### Calibration Output
+
+Each device gets a JSON file in `calibration/`. All values in SI.
 
 ```
-Q = (1/R) × A × ΔT
-
-Where:
-  Q  = heat flow (watts)
-  R  = thermal resistance of the envelope
-  A  = effective surface area
-  ΔT = temperature differential (inside - ambient)
+calibration/
+  chamber_heater.json
+  chamber_exhaust.json
+  humidifier.json
+  pod_heater.json
+  transfer_fan.json
+  chamber_light.json
+  envelope_chamber.json
+  envelope_pod.json
 ```
 
-We don't need to know R and A independently. We solve for the aggregate `(1/R) × A` as a single coefficient — call it the **envelope conductance**. This one number captures the total thermal leakiness of the space: walls, ceiling, floor, seals, air gaps, everything.
+**Device calibration file** (e.g., `chamber_heater.json`):
 
-**How it's measured:**
+```json
+{
+    "device_id": "chamber_heater",
+    "environment": "chamber",
+    "calibrated_at": "2026-02-20T15:42:00Z",
+    "ambient_during_cal": {"temperature": 283.15},
+    "power_draw_watts": 1487.3,
+    "effects": {
+        "on": {
+            "temperature": {
+                "contribution_per_cycle": 2.89,
+                "rise_rate_per_second": 0.048
+            }
+        },
+        "off": {
+            "temperature": {"contribution_per_cycle": 0.0}
+        }
+    },
+    "envelope_conductance_observed": 0.047,
+    "raw_data": {
+        "rise_samples": 142,
+        "decay_samples": 287,
+        "rise_duration_seconds": 1704,
+        "decay_duration_seconds": 3444
+    }
+}
+```
 
-1. Environment is empty. All devices off.
-2. Ambient sensor records outside temperature continuously.
-3. Interior sensor records inside temperature continuously.
-4. System runs for at least 48 hours — two full day/night cycles.
-5. As interior temperature drifts toward ambient, the system records the rate of change at each moment alongside the current differential.
-6. From many (rate, differential) data points across varying conditions, the system fits the envelope conductance coefficient.
-7. Two daily cycles provide a range of differentials to verify the coefficient is consistent. If it's consistent across a 15-degree ambient swing, it will hold across a 50-degree seasonal swing.
+**Envelope calibration file** (e.g., `envelope_chamber.json`):
 
-**Verification:** If the derived coefficient is NOT consistent across different differentials, the system flags this — it suggests nonlinear behavior like wind-dependent air leaks, solar gain on one side of the structure, or other effects that a simple R-value model doesn't capture. The system reports this to the user and may need a more complex envelope model for that environment.
+```json
+{
+    "environment": "chamber",
+    "calibrated_at": "2026-02-20T17:15:00Z",
+    "conductance": {
+        "temperature": 0.047,
+        "humidity": 0.023
+    },
+    "derived_from_devices": ["chamber_heater", "chamber_exhaust"],
+    "conductance_consistency": {
+        "temperature": {"mean": 0.047, "std": 0.003, "max_deviation": 0.004},
+        "humidity": {"mean": 0.023, "std": 0.002, "max_deviation": 0.003}
+    },
+    "ambient_range_observed": {
+        "temperature": {"min": 281.48, "max": 285.93}
+    },
+    "linearity_assessment": "consistent"
+}
+```
 
-**Moisture characterization** follows the same principle but is more complex. Moisture transfer involves both diffusion through materials and air exchange (infiltration). The system derives an aggregate moisture conductance coefficient the same way — watch humidity drift toward ambient humidity with everything off, fit the coefficient from (rate, differential) pairs.
-
-#### Phase 2: Device Characterization (automated, sequential)
-
-With the envelope characterized, device calibration measures each device's **energy contribution** — isolated from envelope effects.
-
-1. For each device:
-   a. Record current ambient and interior conditions
-   b. Predict envelope drift using the Phase 1 model
-   c. Turn on device
-   d. Safety monitor watches for runaway conditions
-   e. Record sensor changes over time
-   f. Subtract predicted envelope drift to isolate device contribution
-   g. Record power consumption (if available)
-   h. Compute device energy contribution rate (watts thermal, grams moisture/hr, etc.)
-   i. Turn off device, wait for settling
-2. For cross-environment devices (inter-chamber fans):
-   a. Record both source and destination environment states
-   b. Activate device
-   c. Record changes in both environments
-   d. Compute transfer rates for heat and humidity
-3. For devices with secondary effects (lights generating heat):
-   a. Measure primary effect (illumination schedule)
-   b. Measure thermal contribution as a side effect
-   c. Record both — solver needs to know that turning lights on adds heat
-
-**Device contributions are approximately constant** — a 1500W heater outputs ~1500W regardless of outdoor temperature. What changes is the net effect, which the solver computes at runtime by combining the device contribution with the current envelope loss rate.
-
-#### Phase 3: Validation
-
-1. Predict: "Turning on device X for 10 minutes at current conditions should change temperature by Y degrees"
-2. Execute and compare
-3. Report model accuracy
-4. If accuracy is poor, diagnose: is the envelope model off, or the device model?
-5. Store validated model in calibration/
+The envelope file aggregates conductance observations from all device experiments. The consistency metrics tell you how much the conductance varied across experiments. Low std = good fit. High std = nonlinear behavior worth investigating.
 
 #### Passive Recalibration (continuous, during normal operation)
 
@@ -315,9 +429,11 @@ After initial calibration, the system continuously validates its model against r
 
 ## File Interfaces
 
-### config/
+All communication between processes is file-based. No IPC, no sockets, no REST endpoints. The daemon reads files and writes files. The CLI reads files and writes files. They never talk to each other directly.
 
-User-authored. Describes what exists:
+### config/config.json
+
+User-authored (or written by a UI). Describes what exists:
 
 - **Environments** - Physical spaces, their connections (air source/sink)
 - **Sensors** - What hardware, where it reports, which environment
@@ -328,27 +444,61 @@ User-authored. Describes what exists:
 
 Config does NOT describe what devices do to properties. That's learned.
 
+The daemon checks config mtime each cycle. If it changes, the daemon validates the new config and swaps it in live. If validation fails, the daemon keeps the old config and logs the error to status.json. No signals or IPC needed for config reload.
+
 ### calibration/
 
-System-generated during calibration. Contains:
+System-generated by `spriggler calibrate`. One JSON file per device, one per environment envelope. All values in SI. Contents described in the Calibration section above.
 
-- **Envelope models** - Derived envelope conductance (aggregate thermal and moisture leakiness) per environment, with confidence metrics and the ambient temperature range observed during calibration
-- **Envelope linearity assessment** - Whether the conductance coefficient was consistent across observed differentials, or whether nonlinear effects were detected
-- **Device energy contributions** - Measured energy output of each device (watts thermal, grams moisture/hr), isolated from envelope effects
-- **Device secondary effects** - Measured side effects (e.g., thermal output of grow lights)
-- **Cross-environment transfer rates** - Heat and moisture transfer rates for inter-chamber devices, measured in both source and destination environments
-- **Device response signatures** - Expected sensor response timing and magnitude for safety monitor coherence checking
-- **Power profiles** - Actual wattage under load per device
-- **Validation results** - Prediction accuracy from Phase 3 spot checks
-- **Calibration metadata** - When calibrated, ambient temperature range during calibration, duration, model accuracy scores
+The daemon reads calibration files at startup and after config reload. Calibration data survives a config unit change (F→C or vice versa) because it is never stored in user units.
 
-**Passive recalibration data** is stored separately from initial calibration:
+### status.json
 
-- **Prediction accuracy log** - Rolling accuracy score for envelope and device models
-- **Drift tracking** - Trend data for envelope conductance and device contributions over time
-- **Diagnostic events** - Timestamped records of detected coefficient changes with possible causes
+System-generated by the daemon. Written every cycle. Current state of the world, no history. All values in SI — unit conversion is the concern of whatever reads this file.
 
-Calibration is environment-specific. Initial calibration requires an empty environment. Passive recalibration runs continuously during normal operation and provides diagnostic information rather than silent correction.
+```json
+{
+    "timestamp": "2026-02-20T15:42:44Z",
+    "cycle": 42,
+    "config_mtime": "2026-02-20T10:00:00Z",
+    "config_error": null,
+    "environments": {
+        "chamber": {
+            "readings": {"temperature": 296.48, "humidity": 55.0},
+            "targets": {
+                "temperature": {"min": 295.37, "max": 300.93, "ideal": 298.15}
+            },
+            "safe_mode": false,
+            "phase": "day"
+        }
+    },
+    "devices": {
+        "chamber_heater": {
+            "state": "on",
+            "power_watts": 1487.3,
+            "runtime_seconds": 312,
+            "locked_out": false
+        }
+    },
+    "sensors": {
+        "chamber_sensor": {
+            "last_reading_at": "2026-02-20T15:42:44Z",
+            "battery": 87,
+            "signal_strength": -72,
+            "stale": false,
+            "missed_polls": 0
+        }
+    },
+    "ambient": {"temperature": 283.15, "humidity": 40.0},
+    "solver": {
+        "last_cost": 2.34,
+        "feasible_combinations": 48,
+        "total_combinations": 64
+    }
+}
+```
+
+Any process can read status.json: a web UI, `spriggler status`, a monitoring script, a cron job that sends alerts. The daemon doesn't need to know or care what reads it.
 
 ### logs/
 
@@ -360,7 +510,7 @@ System-generated during operation:
 - **Anomalies** - When reality diverges from model
 - **Events** - Device commands, sensor readings, errors
 
-Structured format for machine parsing. Human-readable for debugging.
+Structured format for machine parsing. Human-readable for debugging. All temperature values logged in SI with display-formatted equivalents available via `spriggler explain`.
 
 ## The Cost Function: How Spriggler Reasons
 
@@ -585,7 +735,7 @@ Each session starts with: "Here's architecture.md and README.md. We're working o
 - **Safety monitor:** Separate component, independent loop, veto authority over solver
 - **Device trust model:** Sensors are truth, device self-report is advisory only
 - **Multi-environment reasoning:** Cost function, not priority rankings. Solver minimizes total cost across all environments simultaneously. Resources flow to where the situation is most dire.
-- **Envelope characterization:** Derive physical constants (effective R-value / envelope conductance) that hold across seasons, not snapshot coefficients that expire. 48-hour minimum initial calibration with two daily cycles.
+- **Calibration approach:** Active, device-driven. Each device calibration simultaneously characterizes the device's contribution and the envelope's conductance from the decay curve. No more 48-hour passive observation — a few hours of active experiments produces high-signal data across a wide property range.
 - **Recalibration:** Passive and continuous during normal operation. Drift is treated as diagnostic information (something physical changed) rather than a calibration problem to silently correct.
 - **Ambient sensor:** Required, not optional. The physics model cannot function without knowing boundary conditions.
 - **Sensor driver contract:** Returns dict with all reported values in SI units. Standard key taxonomy. One driver per physical sensor, no splitting by property.
@@ -596,11 +746,14 @@ Each session starts with: "Here's architecture.md and README.md. We're working o
 - **Solver implementation:** Brute-force enumeration over all feasible device state combinations. No scipy or external optimizer. Problem space is small enough (~4K-100K combinations for realistic setups) to evaluate exhaustively in under 50ms. Results are fully explainable: "tried N combinations, M within circuit limits, this one lowest cost." If future setups grow beyond feasible enumeration time, heuristics or branch pruning can be added without changing the interface.
 - **Graduated device control:** All devices have discrete states. Binary devices are graduated devices with two states (`['off', 'on']`). No special casing. A VeSync humidifier reports `['off', 'low', 'mid', 'high']`. The solver enumerates all levels. Analog devices are discretized to meaningful steps; the physics model computes optimal continuous settings analytically in a second phase if needed.
 - **Internal units:** All computation, calibration data, and stored logs use SI (Kelvin for temperature, %RH for humidity). User units appear only in the config file (converted to SI at load time) and display surfaces (logs to console, alerts, UI). Calibration data survives a user unit change because it was never stored in user units.
+- **Executables:** Two entry points. `spriggler-daemon` runs the control loop. `spriggler <command>` is the CLI for everything else (calibrate, check, status, explain, reload).
+- **Process communication:** File-based only. No IPC, no sockets, no REST between daemon and CLI. Daemon reads config (checks mtime each cycle), reads calibration files, writes status.json and logs. CLI reads/writes config and calibration, reads status.json and logs.
+- **Power consumption tracking:** If hardware reports real watts (KASA plugs), record it during calibration and runtime. Feeds calibration accuracy, energy cost modeling, and degradation detection.
+- **Manual override:** Per-device `manual_override_minutes` config field. Zero or missing means daemon corrects immediately (owns the device). Positive value means daemon respects a physical button press for N minutes, solver works around it, timer expires, daemon resumes. Safety monitor always has veto. No CLI or computer needed — just press the button on the device.
 
 ## Open Questions
 
 - Interval-based scheduling: periodic timed pulses for irrigation, CO2 injection, sampling. Design settled conceptually, needs schema definition.
-- Web UI protocol: REST API, WebSocket, or pure file-based?
 - Alert/notification mechanism: log-only, email, SMS, push?
 
 ---
