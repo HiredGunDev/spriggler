@@ -166,6 +166,9 @@ class Daemon:
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
 
+        # Write initial status with running=true before first cycle
+        self._write_status(running=True)
+
         self._slog.emit('daemon.start',
                         config_name=self._config.get('name', 'unnamed'),
                         config_path=str(self._config_path),
@@ -188,13 +191,14 @@ class Daemon:
 
             # Write status after every cycle, even on error
             try:
-                self._write_status()
+                self._write_status(running=True)
             except Exception:
                 log.exception("Failed to write status.json")
 
             if self._running:
                 time.sleep(self._cycle_seconds)
 
+        self._write_status(running=False)
         self._slog.emit('daemon.stop', cycles=self._cycle)
         self._slog.close()
 
@@ -452,7 +456,7 @@ class Daemon:
 
     # ── Status output ────────────────────────────────────────────────────
 
-    def _write_status(self) -> None:
+    def _write_status(self, running: bool = True) -> None:
         """Write status.json with current state. All values in SI."""
         now = datetime.now(timezone.utc)
 
@@ -505,6 +509,7 @@ class Daemon:
 
         status = {
             'timestamp': now.isoformat(),
+            'running': running,
             'cycle': self._cycle,
             'config_mtime': datetime.fromtimestamp(
                 self._config_mtime, tz=timezone.utc

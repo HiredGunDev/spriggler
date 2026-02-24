@@ -31,37 +31,37 @@ An environment is a physical space with its own atmosphere. A grow tent, a shed 
 
 ```json
 "environments": {
-  "veg": {
-    "description": "Vegetative chamber",
-    "connections": {
-      "flower": {
-        "via": "inter_fan",
-        "bidirectional": false
-      },
-      "ambient": {
-        "via": "exhaust_fan",
-        "bidirectional": false
-      }
-    }
-  },
-  "flower": {
-    "description": "Flowering chamber",
-    "connections": {
-      "ambient": {
-        "via": "flower_exhaust",
-        "bidirectional": false
-      }
-    }
-  },
-  "seedling_pod": {
-    "description": "Seedling pod on back porch",
-    "connections": {
-      "ambient": {
-        "via": "pod_vent",
-        "bidirectional": false
-      }
-    }
-  }
+"veg": {
+"description": "Vegetative chamber",
+"connections": {
+"flower": {
+"via": "inter_fan",
+"bidirectional": false
+},
+"ambient": {
+"via": "exhaust_fan",
+"bidirectional": false
+}
+}
+},
+"flower": {
+"description": "Flowering chamber",
+"connections": {
+"ambient": {
+"via": "flower_exhaust",
+"bidirectional": false
+}
+}
+},
+"seedling_pod": {
+"description": "Seedling pod on back porch",
+"connections": {
+"ambient": {
+"via": "pod_vent",
+"bidirectional": false
+}
+}
+}
 }
 ```
 
@@ -82,53 +82,62 @@ A sensor is a piece of hardware that reports measurements.
 
 ```json
 "sensors": {
-  "govee_veg": {
-    "driver": "govee_h5100",
-    "environment": "veg",
-    "properties": ["temperature", "humidity"],
-    "poll_interval_seconds": 60,
-    "driver_config": {
-      "address": "A4:C1:38:XX:XX:XX"
-    }
-  },
-  "govee_flower": {
-    "driver": "govee_h5100",
-    "environment": "flower",
-    "properties": ["temperature", "humidity"],
-    "poll_interval_seconds": 60,
-    "driver_config": {
-      "address": "A4:C1:38:YY:YY:YY"
-    }
-  },
-  "govee_pod": {
-    "driver": "govee_h5100",
-    "environment": "seedling_pod",
-    "properties": ["temperature", "humidity"],
-    "poll_interval_seconds": 30,
-    "driver_config": {
-      "address": "A4:C1:38:ZZ:ZZ:ZZ"
-    }
-  },
-  "govee_ambient": {
-    "driver": "govee_h5100",
-    "environment": "ambient",
-    "properties": ["temperature", "humidity"],
-    "poll_interval_seconds": 120,
-    "driver_config": {
-      "address": "A4:C1:38:AA:AA:AA"
-    }
-  },
-  "vesync_pod_humidity": {
-    "driver": "vesync_humidity",
-    "environment": "seedling_pod",
-    "properties": ["humidity"],
-    "poll_interval_seconds": 60,
-    "driver_config": {
-      "address": "192.168.1.115"
-    }
-  }
+"govee_veg": {
+"driver": "govee_h5100",
+"environment": "veg",
+"properties": ["temperature", "humidity"],
+"poll_interval_seconds": 60,
+"driver_config": {
+"address": "A4:C1:38:XX:XX:XX"
+}
+},
+"govee_flower": {
+"driver": "govee_h5100",
+"environment": "flower",
+"properties": ["temperature", "humidity"],
+"poll_interval_seconds": 60,
+"driver_config": {
+"address": "2C6A"
+}
+},
+"govee_pod": {
+"driver": "govee_h5100",
+"environment": "seedling_pod",
+"properties": ["temperature", "humidity"],
+"poll_interval_seconds": 30,
+"driver_config": {
+"address": "627A"
+}
+},
+"govee_ambient": {
+"driver": "govee_h5100",
+"environment": "ambient",
+"properties": ["temperature", "humidity"],
+"poll_interval_seconds": 120,
+"driver_config": {
+"address": "A4:C1:38:AA:AA:AA"
+}
+},
+"vesync_pod_humidity": {
+"driver": "vesync_humidity",
+"environment": "seedling_pod",
+"properties": ["humidity"],
+"poll_interval_seconds": 60,
+"driver_config": {
+"address": "192.168.1.115"
+}
+}
 }
 ```
+
+**Govee address formats:** The `address` field in Govee `driver_config` accepts two formats:
+
+| Format | Example | Platform | Description |
+|---|---|---|---|
+| Full MAC | `"A4:C1:38:2C:6A:00"` | Linux | Matched against BLE device address |
+| Name suffix | `"2C6A"` | macOS, Linux | Matched against last 4+ hex chars of BLE local name (e.g., `GVH5100_2C6A`) |
+
+Use name suffix on macOS because CoreBluetooth doesn't expose MAC addresses. Name suffix also works on Linux. Govee sensors embed the last 4 hex digits of their MAC in the BLE advertised name.
 
 **Common fields:**
 

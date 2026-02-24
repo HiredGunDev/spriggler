@@ -30,37 +30,49 @@ The core insight: environmental control is a thermodynamics problem. Temperature
 
 Spriggler has two entry points with a clean separation of concerns:
 
-**`spriggler-daemon`** — the daemon. Runs forever, no interactivity. Reads config, reads calibration data, runs the control loop, writes status and logs. The only communication it accepts is a changed config file (detected by mtime check each cycle) and SIGTERM to stop.
+**`spriggler-daemon`** — the daemon. Runs forever, no interactivity. Reads config, reads calibration data, runs the control loop, writes status and structured log to the state directory. The only communication it accepts is a changed config file (detected by mtime check each cycle) and SIGTERM to stop.
+
+```
+spriggler-daemon --config config.json [--state-dir DIR] [--quiet] [--verbose]
+```
 
 **`spriggler <command>`** — the CLI. Everything else:
 
 ```
-spriggler calibrate [--device <id>]   Run calibration experiments
-spriggler check                       Validate config, exit
-spriggler status                      Pretty-print status.json in user units
-spriggler explain [--cycle <n>]       Explain a solver decision from logs
-spriggler reload                      Touch config mtime, daemon picks it up
+spriggler display [--interval N]          Live curses dashboard (implemented)
+spriggler calibrate [--device <id>]       Run calibration experiments (planned)
+spriggler check                           Validate config, exit (planned)
+spriggler status                          Pretty-print status.json (planned)
+spriggler explain [--cycle <n>]           Explain a solver decision from logs (planned)
 ```
+
+Both accept `--state-dir` to override the state directory (default: `~/.spriggler/`).
 
 The daemon and CLI share the same libraries (config loader, drivers, physics model, units) but have completely different control flow. The daemon is a loop. The CLI is interactive commands.
 
-**No IPC.** The daemon and CLI never communicate directly. All coordination is through the filesystem. This means a UI crash cannot take down the daemon. It also means any tool that can read and write files can interact with Spriggler — vim, a web UI, a cron job, a shell script.
+**No IPC.** The daemon and CLI never communicate directly. All coordination is through the filesystem — specifically the state directory. This means a UI crash cannot take down the daemon. It also means any tool that can read and write files can interact with Spriggler — vim, a web UI, a cron job, a shell script.
 
 ## System Components
 
 ```
 ┌────────────────────────────────────────────────────────────┐
 │                   spriggler <command>                       │
-│          calibrate │ check │ status │ explain               │
-├────────────────────┼───────────────────────────────────────┤
-│                    │                                        │
-│                    ▼ writes                                 │
-│   ┌──────────┐  ┌──────────┐  ┌──────────┐                │
-│   │ config/  │  │ calibr/  │  │ status   │                │
-│   │  .json   │  │  .json   │  │  .json   │                │
-│   └────┬─────┘  └────┬─────┘  └────┬─────┘                │
-│        │ reads        │ reads       │ writes                │
-│        ▼              ▼             ▼                       │
+│       display │ calibrate │ status │ explain                │
+├───────────────┼────────────────────────────────────────────┤
+│               │ reads                                      │
+│               ▼                                            │
+│  ┌─────────────────────┐                                   │
+│  │  ~/.spriggler/      │  ← State directory                │
+│  │    status.json      │    (--state-dir override)         │
+│  │    spriggler.log    │                                   │
+│  │    calibration/     │                                   │
+│  └──────────┬──────────┘                                   │
+│             │ writes         ┌──────────┐                  │
+│             │                │ config/  │                  │
+│             │                │  .json   │                  │
+│             │                └────┬─────┘                  │
+│             │                     │ reads                   │
+│             ▼                     ▼                         │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │                SPRIGGLER-DAEMON                      │   │
 │  │                                                      │   │
@@ -74,6 +86,11 @@ The daemon and CLI share the same libraries (config loader, drivers, physics mod
 │  │  │ Sensors  │ │ Devices  │ │ Physics  │ │ Solver │  │   │
 │  │  │ Drivers  │ │ Drivers  │ │  Model   │ │        │  │   │
 │  │  └──────────┘ └──────────┘ └──────────┘ └────────┘  │   │
+│  │                                                      │   │
+│  │  ┌──────────┐ ┌──────────┐                           │   │
+│  │  │Structured│ │  State   │                           │   │
+│  │  │  Logger  │ │  Writer  │                           │   │
+│  │  └──────────┘ └──────────┘                           │   │
 │  └─────────────────────────────────────────────────────┘   │
 │           │              │                                  │
 │           ▼              ▼                                  │
@@ -431,6 +448,19 @@ After initial calibration, the system continuously validates its model against r
 
 All communication between processes is file-based. No IPC, no sockets, no REST endpoints. The daemon reads files and writes files. The CLI reads files and writes files. They never talk to each other directly.
 
+### State Directory
+
+The daemon writes all output to a single state directory. The CLI reads from the same directory. Default: `~/.spriggler/`. Override with `--state-dir` flag or `SPRIGGLER_STATE_DIR` environment variable.
+
+```
+~/.spriggler/
+    status.json         Current state (atomic write each cycle)
+    spriggler.log       Structured JSON-lines event log
+    calibration/        (future) Learned physical constants
+```
+
+Resolution priority: `--state-dir` flag > `SPRIGGLER_STATE_DIR` env var > `~/.spriggler/` default.
+
 ### config/config.json
 
 User-authored (or written by a UI). Describes what exists:
@@ -456,9 +486,15 @@ The daemon reads calibration files at startup and after config reload. Calibrati
 
 System-generated by the daemon. Written every cycle. Current state of the world, no history. All values in SI — unit conversion is the concern of whatever reads this file.
 
+The `running` field enables three-state daemon health detection:
+- `running: true` + fresh timestamp → daemon is running normally
+- `running: false` + any timestamp → daemon shut down cleanly
+- `running: true` + stale timestamp → daemon crashed or hung
+
 ```json
 {
   "timestamp": "2026-02-20T15:42:44Z",
+  "running": true,
   "cycle": 42,
   "config_mtime": "2026-02-20T10:00:00Z",
   "config_error": null,
@@ -468,8 +504,7 @@ System-generated by the daemon. Written every cycle. Current state of the world,
       "targets": {
         "temperature": {"min": 295.37, "max": 300.93, "ideal": 298.15}
       },
-      "safe_mode": false,
-      "phase": "day"
+      "safe_mode": false
     }
   },
   "devices": {
@@ -477,16 +512,16 @@ System-generated by the daemon. Written every cycle. Current state of the world,
       "state": "on",
       "power_watts": 1487.3,
       "runtime_seconds": 312,
-      "locked_out": false
+      "locked_out": false,
+      "manual_override": false
     }
   },
   "sensors": {
     "chamber_sensor": {
-      "last_reading_at": "2026-02-20T15:42:44Z",
-      "battery": 87,
-      "signal_strength": -72,
       "stale": false,
-      "missed_polls": 0
+      "missed_polls": 0,
+      "battery": 87,
+      "signal_strength": -72
     }
   },
   "ambient": {"temperature": 283.15, "humidity": 40.0},
@@ -500,17 +535,40 @@ System-generated by the daemon. Written every cycle. Current state of the world,
 
 Any process can read status.json: a web UI, `spriggler status`, a monitoring script, a cron job that sends alerts. The daemon doesn't need to know or care what reads it.
 
-### logs/
+### spriggler.log
 
-System-generated during operation:
+System-generated structured log. JSON-lines format — one JSON object per line, machine-parseable, self-contained. Written to the state directory.
 
-- **Decisions** - What the solver chose and why
-- **Safety events** - Vetoes, lockouts, limit breaches, coherence failures
-- **Predictions vs actuals** - Model validation
-- **Anomalies** - When reality diverges from model
-- **Events** - Device commands, sensor readings, errors
+**Event types:**
 
-Structured format for machine parsing. Human-readable for debugging. All temperature values logged in SI with display-formatted equivalents available via `spriggler explain`.
+| Event | Description |
+|---|---|
+| `daemon.start` | Daemon startup with config summary, state dir, sensor/device counts |
+| `daemon.stop` | Clean shutdown with total cycle count |
+| `config.reload` | Config reload success or failure |
+| `cycle.start` | Beginning of a control cycle |
+| `sensor.reading` | Successful sensor read (temperature, humidity, battery, RSSI in SI) |
+| `sensor.missed` | Sensor returned no data |
+| `safety.alert` | Safety monitor alert with level and message |
+| `safety.safe_mode` | Environment(s) entered safe mode |
+| `safety.command` | Safety override forced a device state |
+| `solver.result` | Solver evaluation: feasible/total combos, cost, chosen device states |
+| `device.command` | Device state change (old → new) |
+| `device.power` | Device power consumption in watts |
+| `override.detected` | Manual override detected with hold time |
+| `override.expired` | Manual override timer expired |
+| `override.mismatch` | Device state mismatch corrected (no hold time) |
+| `environment.summary` | Environment readings vs targets |
+
+**Example log line:**
+
+```json
+{"ts": "2026-02-24T02:43:18.543Z", "event": "sensor.reading", "cycle": 2, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 295.95, "humidity": 24.0, "battery": 90.0, "signal_strength": -86.0}
+```
+
+Every event includes `ts` (UTC ISO-8601) and `event` (type string). Cycle-scoped events include `cycle`. All temperature values in Kelvin. The console formatter translates these to human-readable output in the user's preferred unit.
+
+The log file is append-only. Rotation and retention are future work (important for Pi deployments with limited storage).
 
 ## The Cost Function: How Spriggler Reasons
 
@@ -657,23 +715,32 @@ Any driver — sensor or device — can be validated against the standard contra
 
 **Sensor driver conformance:**
 
-- `read()` returns a dict
-- All keys are in the standard taxonomy
+- Subclasses `SensorDriver` ABC
+- `read()` returns a dict or None
+- All keys are in the standard taxonomy (`temperature`, `humidity`, `battery`, `signal_strength`)
 - All values are in SI units
 - Temperature is in Kelvin, not Celsius, not Fahrenheit
 - Humidity is in %RH
 - Battery is in percent (0-100)
-- Driver handles hardware timeout without crashing
-- Driver handles garbage data without crashing (returns error, not garbage values)
+- `validate_config()` accepts valid config and raises on invalid
+- `driver_name` property returns a string matching the registry name
+- Driver handles hardware timeout without crashing (returns None)
+- Driver handles garbage data without crashing (returns None, not garbage values)
 - Driver does not block indefinitely
 
 **Device driver conformance:**
 
-- `turn_on()` and `turn_off()` accept no arguments and return success/failure
-- `is_on()` returns a boolean
+- Subclasses `DeviceDriver` ABC
+- `get_available_states()` returns a list of strings, always including `'off'` as the first element
+- `set_state(state)` accepts any state from `get_available_states()`
+- `get_current_state()` returns a string from `get_available_states()`
+- `turn_on()` and `turn_off()` are convenience methods (default to first/last state)
+- `is_on()` returns True if current state is not `'off'`
 - `get_power()` returns watts or None if not supported
 - `supports_countdown()` returns a boolean
 - If `supports_countdown()` is True, `set_countdown(seconds, target_state)` accepts valid arguments
+- `validate_config()` accepts valid config and raises on invalid
+- `driver_name` property returns a string matching the registry name
 - Driver handles network timeout gracefully
 - Driver handles device-not-found gracefully
 
@@ -714,12 +781,12 @@ Each session starts with: "Here's architecture.md and README.md. We're working o
 
 **Keep (with review):**
 
-- Sensor drivers (Govee BLE — replace hand-rolled parsing with govee-ble library)
-- Device drivers (KASA, VeSync)
+- Sensor drivers (Govee BLE — now uses govee-ble library, dual addressing for macOS)
+- Device drivers (KASA, VeSync — to be ported to new DeviceDriver ABC)
 - KASA hardware countdown timer management (proven, critical safety feature)
-- BLE scanning via bleak (proven, reliable)
+- BLE scanning via bleak (proven, reliable — now shared scanner architecture)
 - Power state management
-- Structured logging format
+- Structured logging format (now JSON-lines in state directory)
 
 **Discard:**
 
@@ -728,6 +795,7 @@ Each session starts with: "Here's architecture.md and README.md. We're working o
 - Per-property evaluation
 - Sequential command issuing
 - Hand-rolled Govee BLE advertisement parsing (use govee-ble library instead)
+- Log and status files next to config (now in state directory)
 
 ## Decisions Made
 
@@ -738,16 +806,21 @@ Each session starts with: "Here's architecture.md and README.md. We're working o
 - **Calibration approach:** Active, device-driven. Each device calibration simultaneously characterizes the device's contribution and the envelope's conductance from the decay curve. No more 48-hour passive observation — a few hours of active experiments produces high-signal data across a wide property range.
 - **Recalibration:** Passive and continuous during normal operation. Drift is treated as diagnostic information (something physical changed) rather than a calibration problem to silently correct.
 - **Ambient sensor:** Required, not optional. The physics model cannot function without knowing boundary conditions.
-- **Sensor driver contract:** Returns dict with all reported values in SI units. Standard key taxonomy. One driver per physical sensor, no splitting by property.
+- **Sensor driver contract:** Subclass `SensorDriver` ABC. `read()` returns dict with all reported values in SI units or None. Standard key taxonomy. One driver per physical sensor, no splitting by property. `driver_name` property for registry lookup.
+- **Device driver contract:** Subclass `DeviceDriver` ABC. `get_available_states()` returns list of discrete states. `set_state()`/`get_current_state()` for control. `turn_on()`/`turn_off()`/`is_on()` as convenience methods. `get_power()` for energy monitoring. `supports_countdown()`/`set_countdown()` for hardware failsafes.
 - **Driver-specific config:** Common fields (driver, environment, circuit, role) validated by daemon. Driver-specific fields in `driver_config` block validated by driver.
+- **Package structure:** Sensors and devices in separate packages (`sensors/`, `devices/`), each with base ABC, implementations, and registry. Sensors are things you read, devices are things you command. Same hardware can have both a sensor driver and a device driver (e.g., KASA plug reads power, controls on/off).
 - **Domain-agnostic solver:** The solver knows physics and cost functions. It knows nothing about plants, fish, fermentation, or any specific application. Domain knowledge lives in the config.
-- **Govee BLE parsing:** Use govee-ble library (pip install govee-ble) instead of hand-rolled parsing. Proven across thousands of installations, handles sub-zero temperatures correctly.
+- **Govee BLE driver:** Uses govee-ble library for advertisement parsing. Shared BLE scanner (one scan for all sensors). Dual addressing mode: MAC address on Linux, BLE name suffix on macOS (CoreBluetooth doesn't expose MACs). H5151 gateway filtering. ObjC type casting for macOS compatibility.
 - **Development approach:** Test-driven. Driver conformance harness for third-party driver contributors.
 - **Solver implementation:** Brute-force enumeration over all feasible device state combinations. No scipy or external optimizer. Problem space is small enough (~4K-100K combinations for realistic setups) to evaluate exhaustively in under 50ms. Results are fully explainable: "tried N combinations, M within circuit limits, this one lowest cost." If future setups grow beyond feasible enumeration time, heuristics or branch pruning can be added without changing the interface.
 - **Graduated device control:** All devices have discrete states. Binary devices are graduated devices with two states (`['off', 'on']`). No special casing. A VeSync humidifier reports `['off', 'low', 'mid', 'high']`. The solver enumerates all levels. Analog devices are discretized to meaningful steps; the physics model computes optimal continuous settings analytically in a second phase if needed.
 - **Internal units:** All computation, calibration data, and stored logs use SI (Kelvin for temperature, %RH for humidity). User units appear only in the config file (converted to SI at load time) and display surfaces (logs to console, alerts, UI). Calibration data survives a user unit change because it was never stored in user units.
-- **Executables:** Two entry points. `spriggler-daemon` runs the control loop. `spriggler <command>` is the CLI for everything else (calibrate, check, status, explain, reload).
-- **Process communication:** File-based only. No IPC, no sockets, no REST between daemon and CLI. Daemon reads config (checks mtime each cycle), reads calibration files, writes status.json and logs. CLI reads/writes config and calibration, reads status.json and logs.
+- **Executables:** Two entry points. `spriggler-daemon` runs the control loop. `spriggler <command>` is the CLI for everything else (display, calibrate, check, status, explain).
+- **State directory:** All daemon output (`status.json`, `spriggler.log`, future `calibration/`) goes to `~/.spriggler/` by default. Override with `--state-dir` flag or `SPRIGGLER_STATE_DIR` env var. Both daemon and CLI use the same resolution logic. Config directory is read-only input, state directory is output.
+- **Structured logging:** JSON-lines format to `spriggler.log` in the state directory. One self-contained event per line. Console output is a separate formatter that translates structured events to human-readable text. `--quiet` flag suppresses console; log file always gets everything.
+- **Daemon health:** `running` flag in `status.json`. Set to `true` on startup, `false` on clean shutdown. Combined with timestamp staleness, enables three-state detection: running, stopped, crashed.
+- **Process communication:** File-based only. No IPC, no sockets, no REST between daemon and CLI. Daemon reads config (checks mtime each cycle), reads calibration files, writes to state directory. CLI reads from state directory.
 - **Power consumption tracking:** If hardware reports real watts (KASA plugs), record it during calibration and runtime. Feeds calibration accuracy, energy cost modeling, and degradation detection.
 - **Manual override:** Per-device `manual_override_minutes` config field. Zero or missing means daemon corrects immediately (owns the device). Positive value means daemon respects a physical button press for N minutes, solver works around it, timer expires, daemon resumes. Safety monitor always has veto. No CLI or computer needed — just press the button on the device.
 
@@ -755,5 +828,6 @@ Each session starts with: "Here's architecture.md and README.md. We're working o
 
 - Interval-based scheduling: periodic timed pulses for irrigation, CO2 injection, sampling. Design settled conceptually, needs schema definition.
 - Alert/notification mechanism: log-only, email, SMS, push?
+- Log rotation and retention: critical for Pi deployments with limited SD card storage. Size-based or time-based rotation, configurable retention period.
 
 ---
