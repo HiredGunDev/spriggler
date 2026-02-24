@@ -5,8 +5,11 @@ physics model, and schedule. Runs until interrupted.
 
 File contract:
     Reads:  config.json (checks mtime each cycle, reloads if changed)
-    Writes: status.json (every cycle, current state of the world)
-    Writes: logs/ (structured log output)
+    Writes: ~/.spriggler/status.json (current state, every cycle)
+    Writes: ~/.spriggler/spriggler.log (structured JSON-lines event log)
+
+The state directory defaults to ~/.spriggler/ but can be overridden
+with --state-dir or SPRIGGLER_STATE_DIR.
 
 Usage:
     spriggler-daemon --config config.json
@@ -25,10 +28,12 @@ from pathlib import Path
 from spriggler.config.loader import load_config, ConfigError
 from spriggler.sensors.registry import get_sensor_driver
 from spriggler.devices.registry import get_device_driver
+from spriggler.logging import StructuredLogger
 from spriggler.physics.model import make_solver_predict_fn
 from spriggler.safety.monitor import SafetyMonitor
 from spriggler.schedule import resolve_all_targets, resolve_all_device_overrides
 from spriggler.solver.solver import Solver
+from spriggler.state import resolve_state_dir, ensure_state_dir
 from spriggler.units import format_temp
 
 
@@ -38,7 +43,8 @@ log = logging.getLogger('spriggler')
 class Daemon:
     """The main Spriggler control loop."""
 
-    def __init__(self, config: dict, config_path: Path) -> None:
+    def __init__(self, config: dict, config_path: Path,
+                 state_dir: Path, slog: StructuredLogger) -> None:
         self._config = config
         self._config_path = config_path
         self._config_mtime = config_path.stat().st_mtime
@@ -46,9 +52,11 @@ class Daemon:
         self._original_unit = config.get('_original_unit', 'F')
         self._running = False
         self._cycle = 0
+        self._slog = slog
 
-        # Status file lives next to config
-        self._status_path = config_path.parent / 'status.json'
+        # State directory holds all daemon output
+        self._state_dir = state_dir
+        self._status_path = state_dir / 'status.json'
 
         # Instantiate drivers
         self._sensors = {}
@@ -158,15 +166,17 @@ class Daemon:
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
 
-        log.info("Spriggler daemon starting")
-        log.info("Config: %s", self._config.get('name', 'unnamed'))
-        log.info("Environments: %s", ', '.join(self._config['environments'].keys()))
-        log.info("Sensors: %d, Devices: %d",
-                 len(self._sensors), len(self._devices))
-        log.info("Cycle interval: %ds", self._cycle_seconds)
-        log.info("Display unit: %s", self._original_unit)
-        log.info("Status: %s", self._status_path)
-        log.info("─" * 60)
+        self._slog.emit('daemon.start',
+                        config_name=self._config.get('name', 'unnamed'),
+                        config_path=str(self._config_path),
+                        state_dir=str(self._state_dir),
+                        environments=', '.join(self._config['environments'].keys()),
+                        sensor_count=len(self._sensors),
+                        device_count=len(self._devices),
+                        cycle_seconds=self._cycle_seconds,
+                        display_unit=self._original_unit,
+                        status_path=str(self._status_path),
+                        log_path=str(self._slog._log_path))
 
         while self._running:
             self._cycle += 1
@@ -185,7 +195,8 @@ class Daemon:
             if self._running:
                 time.sleep(self._cycle_seconds)
 
-        log.info("Spriggler daemon stopped")
+        self._slog.emit('daemon.stop', cycles=self._cycle)
+        self._slog.close()
 
     def _handle_signal(self, signum, frame):
         log.info("Received signal %d, shutting down...", signum)
@@ -203,13 +214,13 @@ class Daemon:
         if current_mtime == self._config_mtime:
             return
 
-        log.info("Config file changed, reloading...")
         try:
             new_config = load_config(self._config_path)
             self._config = new_config
             self._config_mtime = current_mtime
             self._config_error = None
             self._original_unit = new_config.get('_original_unit', 'F')
+            self._slog.display_unit = self._original_unit
 
             # Rebuild components with new config
             self._device_env_map = {
@@ -222,18 +233,20 @@ class Daemon:
                 'safety_loop_interval_seconds', 60
             )
 
-            log.info("Config reloaded successfully")
+            self._slog.emit('config.reload', cycle=self._cycle, success=True)
         except (ConfigError, Exception) as e:
             self._config_error = str(e)
             self._config_mtime = current_mtime  # Don't retry every cycle
-            log.error("Config reload failed: %s. Keeping previous config.", e)
+            self._slog.emit('config.reload', cycle=self._cycle,
+                            success=False, error=str(e))
 
     # ── Cycle ────────────────────────────────────────────────────────────
 
     def _run_cycle(self, cycle: int) -> None:
         """Execute one control cycle."""
         now = datetime.now()
-        log.info("── Cycle %d ── %s ──", cycle, now.strftime('%H:%M:%S'))
+        self._slog.emit('cycle.start', cycle=cycle,
+                        time=now.strftime('%H:%M:%S'))
 
         # ── 1. Read sensors ──────────────────────────────────────────────
         readings = {}
@@ -245,7 +258,9 @@ class Daemon:
 
             reading = driver.read()
             if reading is None:
-                log.warning("  sensor %-20s  NO DATA", sensor_id)
+                self._slog.emit('sensor.missed', cycle=cycle,
+                                sensor_id=sensor_id,
+                                environment=env_id)
                 self._safety.report_missed_poll(sensor_id)
                 continue
 
@@ -255,16 +270,18 @@ class Daemon:
 
             if env_id == 'ambient':
                 ambient.update(reading)
-                temp_str = self._fmt_temp(reading.get('temperature'))
-                log.info("  sensor %-20s  ambient  %s", sensor_id, temp_str)
+                self._slog.emit('sensor.reading', cycle=cycle,
+                                sensor_id=sensor_id,
+                                environment='ambient',
+                                **reading)
             else:
                 if env_id not in readings:
                     readings[env_id] = {}
                 readings[env_id].update(reading)
-                temp_str = self._fmt_temp(reading.get('temperature'))
-                hum_str = f"H:{reading.get('humidity', 0):.1f}%"
-                log.info("  sensor %-20s  %-10s %s  %s",
-                         sensor_id, env_id, temp_str, hum_str)
+                self._slog.emit('sensor.reading', cycle=cycle,
+                                sensor_id=sensor_id,
+                                environment=env_id,
+                                **reading)
 
         self._last_readings = readings
         self._last_ambient = ambient
@@ -274,26 +291,24 @@ class Daemon:
         self._last_alerts = alerts
 
         for alert in alerts:
-            log_level = {
-                'INFO': logging.INFO,
-                'WARNING': logging.WARNING,
-                'CRITICAL': logging.CRITICAL,
-                'EMERGENCY': logging.CRITICAL,
-            }.get(alert.level.name, logging.WARNING)
-            log.log(log_level, "  SAFETY: [%s] %s", alert.level.name, alert.message)
+            self._slog.emit('safety.alert', cycle=cycle,
+                            level=alert.level.name,
+                            message=alert.message)
 
-        safe_mode_envs = {
+        safe_mode_envs = [
             env_id for env_id in self._config['environments']
             if self._safety.is_environment_in_safe_mode(env_id)
-        }
+        ]
 
         if safe_mode_envs:
-            log.warning("  SAFE MODE: %s", ', '.join(safe_mode_envs))
+            self._slog.emit('safety.safe_mode', cycle=cycle,
+                            environments=safe_mode_envs)
 
         if commands:
             for dev_id, state in commands:
                 self._execute_device_state(dev_id, state)
-                log.warning("  SAFE CMD: %s → %s", dev_id, state)
+                self._slog.emit('safety.command', cycle=cycle,
+                                device_id=dev_id, state=state)
             if safe_mode_envs:
                 self._last_solver_result = None
                 return
@@ -306,7 +321,8 @@ class Daemon:
         ]
         for dev_id in expired:
             del self._manual_overrides[dev_id]
-            log.info("  OVERRIDE EXPIRED: %s, solver resuming control", dev_id)
+            self._slog.emit('override.expired', cycle=cycle,
+                            device_id=dev_id)
 
         # ── 4. Resolve schedule ──────────────────────────────────────────
         targets = resolve_all_targets(self._config, now)
@@ -349,8 +365,11 @@ class Daemon:
         )
         self._last_solver_result = result
 
-        log.info("  SOLVER: evaluated %d/%d combinations, cost=%.4f",
-                 result.feasible_count, result.total_count, result.total_cost)
+        self._slog.emit('solver.result', cycle=cycle,
+                        feasible=result.feasible_count,
+                        total=result.total_count,
+                        cost=round(result.total_cost, 4),
+                        device_states=result.device_states)
 
         # ── 7. Execute device commands ───────────────────────────────────
         for dev_id, state in result.device_states.items():
@@ -358,49 +377,49 @@ class Daemon:
             current = driver.get_current_state()
             if state != current:
                 self._execute_device_state(dev_id, state)
-                log.info("  CMD: %-20s %s → %s", dev_id, current, state)
-            else:
-                log.debug("  CMD: %-20s %s (no change)", dev_id, state)
+                self._slog.emit('device.command', cycle=cycle,
+                                device_id=dev_id,
+                                old_state=current,
+                                new_state=state)
 
         # ── 8. Detect manual overrides ───────────────────────────────────
-        self._check_manual_overrides(now_ts)
+        self._check_manual_overrides(cycle, now_ts)
 
         # ── 9. Log power and environment summary ─────────────────────────
         for dev_id, info in self._devices.items():
             driver = info['driver']
             power = driver.get_power()
             if power is not None and power > 0:
-                log.info("  PWR: %-20s %.1f W", dev_id, power)
+                self._slog.emit('device.power', cycle=cycle,
+                                device_id=dev_id, watts=power)
 
         for env_id, env_readings in readings.items():
             env_targets = targets.get(env_id, {})
             temp = env_readings.get('temperature')
             target = env_targets.get('temperature', {})
             if temp is not None and target:
-                t_str = self._fmt_temp(temp)
-                tgt_min = self._fmt_temp(target.get('min'))
-                tgt_max = self._fmt_temp(target.get('max'))
-                log.info("  ENV %-12s  %s  [%s – %s]",
-                         env_id, t_str, tgt_min, tgt_max)
+                self._slog.emit('environment.summary', cycle=cycle,
+                                environment=env_id,
+                                temperature=temp,
+                                humidity=env_readings.get('humidity'),
+                                target_min=target.get('min'),
+                                target_max=target.get('max'),
+                                target_ideal=target.get('ideal'))
 
     # ── Manual override detection ────────────────────────────────────────
 
-    def _check_manual_overrides(self, now_ts: float) -> None:
-        """Check if any device state differs from what was commanded.
-
-        If manual_override_minutes > 0, start a hold timer.
-        If manual_override_minutes is 0 or missing, issue correction.
-        """
+    def _check_manual_overrides(self, cycle: int, now_ts: float) -> None:
+        """Check if any device state differs from what was commanded."""
         for dev_id, info in self._devices.items():
             if dev_id in self._manual_overrides:
-                continue  # Already in override, skip
+                continue
 
             driver = info['driver']
             actual = driver.get_current_state()
             commanded = self._last_commanded.get(dev_id, 'off')
 
             if actual == commanded:
-                continue  # In sync
+                continue
 
             dev_cfg = self._config['devices'].get(dev_id, {})
             override_minutes = dev_cfg.get('manual_override_minutes', 0)
@@ -408,13 +427,16 @@ class Daemon:
             if override_minutes > 0:
                 expiry = now_ts + (override_minutes * 60)
                 self._manual_overrides[dev_id] = expiry
-                log.info("  OVERRIDE: %s manually set to '%s', "
-                         "respecting for %d min",
-                         dev_id, actual, override_minutes)
+                self._slog.emit('override.detected', cycle=cycle,
+                                device_id=dev_id,
+                                actual_state=actual,
+                                commanded_state=commanded,
+                                hold_minutes=override_minutes)
             else:
-                log.warning("  MISMATCH: %s is '%s', expected '%s'. "
-                            "Correcting.",
-                            dev_id, actual, commanded)
+                self._slog.emit('override.mismatch', cycle=cycle,
+                                device_id=dev_id,
+                                actual_state=actual,
+                                commanded_state=commanded)
                 self._execute_device_state(dev_id, commanded)
 
     # ── Device execution ─────────────────────────────────────────────────
@@ -434,7 +456,6 @@ class Daemon:
         """Write status.json with current state. All values in SI."""
         now = datetime.now(timezone.utc)
 
-        # Build environment status
         environments = {}
         for env_id in self._config['environments']:
             environments[env_id] = {
@@ -443,7 +464,6 @@ class Daemon:
                 'safe_mode': self._safety.is_environment_in_safe_mode(env_id),
             }
 
-        # Build device status
         devices = {}
         for dev_id, info in self._devices.items():
             driver = info['driver']
@@ -463,7 +483,6 @@ class Daemon:
 
             devices[dev_id] = dev_status
 
-        # Build sensor status
         sensors = {}
         for sensor_id in self._sensors:
             sensor_state = self._safety.get_sensor_state(sensor_id)
@@ -475,7 +494,6 @@ class Daemon:
                     'signal_strength': sensor_state.last_rssi,
                 }
 
-        # Solver summary
         solver = {}
         if self._last_solver_result:
             r = self._last_solver_result
@@ -499,7 +517,6 @@ class Daemon:
             'solver': solver,
         }
 
-        # Atomic write: write to tmp, then rename
         tmp_path = self._status_path.with_suffix('.tmp')
         with open(tmp_path, 'w') as f:
             json.dump(status, f, indent=2, default=str)
@@ -509,11 +526,7 @@ class Daemon:
     # ── Helpers ──────────────────────────────────────────────────────────
 
     def _estimate_device_amps(self) -> dict[str, dict[str, float]]:
-        """Estimate amps per device per state.
-
-        TODO: Real values from calibration or config.
-        For now, rough estimates from device roles.
-        """
+        """Estimate amps per device per state."""
         amps = {}
         for dev_id, dev_cfg in self._config['devices'].items():
             role = dev_cfg['role']
@@ -543,19 +556,20 @@ class Daemon:
 
         return amps
 
-    def _fmt_temp(self, kelvin: float | None) -> str:
-        """Format a temperature for log output."""
-        if kelvin is None:
-            return "-- --"
-        return format_temp(kelvin, self._original_unit)
-
 
 def main():
     parser = argparse.ArgumentParser(
         description='Spriggler environmental control daemon'
     )
-    parser.add_argument('--config', required=True, help='Path to config JSON file')
-    parser.add_argument('--verbose', '-v', action='store_true', help='Debug logging')
+    parser.add_argument('--config', required=True,
+                        help='Path to config JSON file')
+    parser.add_argument('--state-dir',
+                        help='State directory for output files '
+                             '(default: ~/.spriggler/)')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='Debug logging')
+    parser.add_argument('--quiet', '-q', action='store_true',
+                        help='Suppress console output (log file only)')
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -566,7 +580,18 @@ def main():
 
     config_path = Path(args.config).resolve()
     config = load_config(config_path)
-    daemon = Daemon(config, config_path)
+
+    state_dir = ensure_state_dir(resolve_state_dir(args.state_dir))
+    log_path = state_dir / 'spriggler.log'
+    display_unit = config.get('_original_unit', 'F')
+
+    slog = StructuredLogger(
+        log_path=log_path,
+        display_unit=display_unit,
+        console=not args.quiet,
+    )
+
+    daemon = Daemon(config, config_path, state_dir, slog)
     daemon.run()
 
 

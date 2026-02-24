@@ -8,12 +8,21 @@ BLE scanning runs in a background thread. The daemon's sync read()
 call returns the most recent cached reading, or None if no
 advertisement has been received within the staleness window.
 
+Addressing:
+    On Linux, BLE exposes real MAC addresses (e.g., "A4:C1:38:2C:6A").
+    On macOS, CoreBluetooth hides MACs behind randomized UUIDs. However,
+    Govee sensors embed the last 4 hex of their MAC in the BLE local
+    name (e.g., "GVH5100_2C6A"). The driver accepts either format:
+      - Full MAC: "A4:C1:38:2C:6A:XX" — matched against device address
+      - Name suffix: "2C6A" — matched against the BLE local name
+
 Dependencies:
     pip install govee-ble bleak
 """
 
 import asyncio
 import logging
+import platform
 import re
 import threading
 import time
@@ -27,21 +36,40 @@ from spriggler.sensors.base import SensorDriver, SensorReadError
 
 log = logging.getLogger('spriggler.govee')
 
+# MAC address pattern: AA:BB:CC:DD:EE:FF
+_MAC_PATTERN = re.compile(r'^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$')
+
+# Name suffix pattern: 4 hex chars (e.g., "2C6A")
+_SUFFIX_PATTERN = re.compile(r'^[0-9A-Fa-f]{4,}$')
+
+# Models that are gateways/hubs, not sensors. Ignore their advertisements.
+_GATEWAY_MODELS = {'H5151'}
+
 
 def _celsius_to_kelvin(c: float) -> float:
     return c + 273.15
+
+
+def _is_gateway(local_name: str) -> bool:
+    """Check if a BLE local name belongs to a gateway device."""
+    for model in _GATEWAY_MODELS:
+        if model in local_name:
+            return True
+    return False
 
 
 class GoveeSensor(SensorDriver):
     """BLE sensor driver for Govee H5100 and compatible models.
 
     driver_config:
-        address: BLE MAC address (e.g., "A4:C1:38:XX:XX:XX")
+        address: BLE MAC address or name suffix
+                 MAC: "A4:C1:38:XX:XX:XX" (Linux)
+                 Suffix: "2C6A" (macOS, last 4 hex from BLE name)
         scan_timeout: seconds to consider a reading stale (default: 120)
 
     The driver maintains a background BLE scanner that receives
     advertisements from all Govee devices. Each read() returns the
-    most recent parsed data for this sensor's MAC address.
+    most recent parsed data for this sensor's address.
 
     Multiple GoveeSensor instances share a single scanner via the
     class-level scanner management.
@@ -53,11 +81,20 @@ class GoveeSensor(SensorDriver):
     _scanner_thread = None
     _scanner_loop = None
     _scanner_running = False
-    _instances: dict[str, 'GoveeSensor'] = {}  # address -> instance
+    _mac_instances: dict[str, 'GoveeSensor'] = {}     # MAC -> instance
+    _suffix_instances: dict[str, 'GoveeSensor'] = {}   # suffix -> instance
 
     def __init__(self, driver_config: dict) -> None:
-        self._address = driver_config['address'].upper()
+        addr = driver_config['address'].upper()
         self._scan_timeout = driver_config.get('scan_timeout', 120)
+
+        # Determine if this is a MAC address or name suffix
+        if _MAC_PATTERN.match(addr):
+            self._address = addr
+            self._match_mode = 'mac'
+        else:
+            self._address = addr
+            self._match_mode = 'suffix'
 
         # govee-ble parser for this device
         self._parser = GoveeBluetoothDeviceData()
@@ -92,8 +129,11 @@ class GoveeSensor(SensorDriver):
         if 'address' not in driver_config:
             raise ValueError("Missing required field: 'address'")
         addr = driver_config['address']
-        if not re.match(r'^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$', addr):
-            raise ValueError(f"Invalid MAC address: '{addr}'")
+        if not _MAC_PATTERN.match(addr) and not _SUFFIX_PATTERN.match(addr):
+            raise ValueError(
+                f"Invalid address: '{addr}'. "
+                "Use a MAC (A4:C1:38:XX:XX:XX) or name suffix (2C6A)."
+            )
 
     @property
     def driver_name(self) -> str:
@@ -103,18 +143,16 @@ class GoveeSensor(SensorDriver):
 
     def _on_advertisement(self, service_info: BluetoothServiceInfo) -> None:
         """Called by the scanner when an advertisement is received
-        from this sensor's MAC address.
+        for this sensor.
 
         Parses the advertisement via govee-ble and caches the result.
         """
         try:
-            # Check if govee-ble recognizes this device
             if not self._parser.supported(service_info):
                 return
 
             update = self._parser.update(service_info)
 
-            # Extract values from the SensorUpdate
             reading = {}
             for key, value in update.entity_values.items():
                 native = value.native_value
@@ -128,7 +166,6 @@ class GoveeSensor(SensorDriver):
                 device_class = desc.device_class
 
                 if device_class == SensorDeviceClass.TEMPERATURE:
-                    # govee-ble returns Celsius
                     reading['temperature'] = _celsius_to_kelvin(float(native))
                 elif device_class == SensorDeviceClass.HUMIDITY:
                     reading['humidity'] = float(native)
@@ -137,7 +174,6 @@ class GoveeSensor(SensorDriver):
                 elif device_class == SensorDeviceClass.SIGNAL_STRENGTH:
                     reading['signal_strength'] = float(native)
 
-            # RSSI comes from the service_info directly
             if 'signal_strength' not in reading:
                 reading['signal_strength'] = service_info.rssi
 
@@ -161,7 +197,10 @@ class GoveeSensor(SensorDriver):
     def _register(cls, instance: 'GoveeSensor') -> None:
         """Register a sensor instance and start the shared scanner."""
         with cls._scanner_lock:
-            cls._instances[instance._address] = instance
+            if instance._match_mode == 'mac':
+                cls._mac_instances[instance._address] = instance
+            else:
+                cls._suffix_instances[instance._address] = instance
             if not cls._scanner_running:
                 cls._start_scanner()
 
@@ -175,8 +214,8 @@ class GoveeSensor(SensorDriver):
             daemon=True,
         )
         cls._scanner_thread.start()
-        log.info("BLE scanner started (%d sensor(s) registered)",
-                 len(cls._instances))
+        total = len(cls._mac_instances) + len(cls._suffix_instances)
+        log.info("BLE scanner started (%d sensor(s) registered)", total)
 
     @classmethod
     def _scanner_thread_fn(cls) -> None:
@@ -193,32 +232,65 @@ class GoveeSensor(SensorDriver):
             log.warning("BLE scanner thread exited")
 
     @classmethod
+    def _find_instance(cls, address: str, local_name: str) -> 'GoveeSensor | None':
+        """Find the sensor instance for a given advertisement."""
+        # Try MAC match first (Linux)
+        instance = cls._mac_instances.get(address.upper())
+        if instance is not None:
+            return instance
+
+        # Try name suffix match (macOS)
+        if local_name:
+            for suffix, inst in cls._suffix_instances.items():
+                if local_name.upper().endswith(suffix):
+                    return inst
+
+        return None
+
+    @classmethod
     async def _scan_forever(cls) -> None:
         """Async scanner loop. Runs until the daemon exits."""
         def detection_callback(device, advertisement_data):
-            address = device.address.upper()
-            instance = cls._instances.get(address)
-            if instance is None:
-                return  # Not one of our sensors
+            # Cast all values to pure Python types.
+            # macOS CoreBluetooth returns ObjC types (pyobjc_unicode etc.)
+            # that habluetooth's Cython layer rejects.
+            local_name = str(advertisement_data.local_name or device.name or "")
+            address = str(device.address)
 
-            # Build BluetoothServiceInfo for govee-ble
+            # Skip gateways
+            if _is_gateway(local_name):
+                return
+
+            instance = cls._find_instance(address, local_name)
+            if instance is None:
+                return
+
             service_info = BluetoothServiceInfo(
-                name=advertisement_data.local_name or device.name or "",
-                address=address,
-                rssi=advertisement_data.rssi,
-                manufacturer_data=dict(advertisement_data.manufacturer_data),
-                service_data=dict(advertisement_data.service_data),
-                service_uuids=list(advertisement_data.service_uuids),
+                name=str(local_name),
+                address=str(address),
+                rssi=int(advertisement_data.rssi),
+                manufacturer_data={
+                    int(k): bytes(v)
+                    for k, v in advertisement_data.manufacturer_data.items()
+                },
+                service_data={
+                    str(k): bytes(v)
+                    for k, v in advertisement_data.service_data.items()
+                },
+                service_uuids=[str(u) for u in advertisement_data.service_uuids],
                 source="bleak",
             )
             instance._on_advertisement(service_info)
 
+        # macOS CoreBluetooth does not support passive scanning
+        scan_mode = "active" if platform.system() == "Darwin" else "passive"
+
         scanner = BleakScanner(
             detection_callback=detection_callback,
-            scanning_mode="passive",
+            scanning_mode=scan_mode,
         )
 
-        log.info("Starting BLE passive scan...")
+        log.info("Starting BLE %s scan...", scan_mode)
         while cls._scanner_running:
             try:
                 async with scanner:
@@ -240,5 +312,6 @@ class GoveeSensor(SensorDriver):
                 )
             if cls._scanner_thread:
                 cls._scanner_thread.join(timeout=5)
-            cls._instances.clear()
+            cls._mac_instances.clear()
+            cls._suffix_instances.clear()
             log.info("BLE scanner stopped")

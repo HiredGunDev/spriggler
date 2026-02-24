@@ -1,0 +1,103 @@
+{"ts": "2026-02-24T02:24:34.776325+00:00", "event": "daemon.start", "config_name": "Shed - Real Sensors, Mock Devices", "environments": "flower", "sensor_count": 2, "device_count": 2, "cycle_seconds": 60, "display_unit": "F", "status_path": "/Users/captkelley/Projects/spriggler/config/status.json", "log_path": "/Users/captkelley/Projects/spriggler/config/spriggler.log"}
+{"ts": "2026-02-24T02:24:34.776726+00:00", "event": "cycle.start", "cycle": 1, "time": "21:24:34"}
+{"ts": "2026-02-24T02:24:34.776759+00:00", "event": "sensor.missed", "cycle": 1, "sensor_id": "flower_sensor", "environment": "flower"}
+{"ts": "2026-02-24T02:24:34.776804+00:00", "event": "sensor.missed", "cycle": 1, "sensor_id": "ambient_sensor", "environment": "ambient"}
+{"ts": "2026-02-24T02:24:34.776868+00:00", "event": "solver.result", "cycle": 1, "feasible": 4, "total": 4, "cost": 0.0, "device_states": {"flower_heater": "off", "flower_light": "off"}}
+{"ts": "2026-02-24T02:25:34.782617+00:00", "event": "cycle.start", "cycle": 2, "time": "21:25:34"}
+{"ts": "2026-02-24T02:25:34.783206+00:00", "event": "sensor.reading", "cycle": 2, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 296.54999999999995, "humidity": 23.1, "battery": 89.0, "signal_strength": -81.0}
+{"ts": "2026-02-24T02:25:34.783528+00:00", "event": "sensor.reading", "cycle": 2, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.65, "humidity": 53.0, "battery": 81.0, "signal_strength": -66.0}
+{"ts": "2026-02-24T02:25:34.784241+00:00", "event": "solver.result", "cycle": 2, "feasible": 4, "total": 4, "cost": 5.9395, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:25:34.785049+00:00", "event": "device.command", "cycle": 2, "device_id": "flower_heater", "old_state": "off", "new_state": "on"}
+{"ts": "2026-02-24T02:25:34.785589+00:00", "event": "device.power", "cycle": 2, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:25:34.785792+00:00", "event": "environment.summary", "cycle": 2, "environment": "flower", "temperature": 296.54999999999995, "humidity": 23.1, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:26:34.793391+00:00", "event": "cycle.start", "cycle": 3, "time": "21:26:34"}
+{"ts": "2026-02-24T02:26:34.794411+00:00", "event": "sensor.reading", "cycle": 3, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 297.04999999999995, "humidity": 22.6, "battery": 89.0, "signal_strength": -82.0}
+{"ts": "2026-02-24T02:26:34.794793+00:00", "event": "sensor.reading", "cycle": 3, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.65, "humidity": 53.2, "battery": 81.0, "signal_strength": -65.0}
+{"ts": "2026-02-24T02:26:34.795459+00:00", "event": "solver.result", "cycle": 3, "feasible": 4, "total": 4, "cost": 6.3221, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:26:34.795756+00:00", "event": "device.power", "cycle": 3, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:26:34.795991+00:00", "event": "environment.summary", "cycle": 3, "environment": "flower", "temperature": 297.04999999999995, "humidity": 22.6, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:27:34.803254+00:00", "event": "cycle.start", "cycle": 4, "time": "21:27:34"}
+{"ts": "2026-02-24T02:27:34.803796+00:00", "event": "sensor.reading", "cycle": 4, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 297.15, "humidity": 22.6, "battery": 89.0, "signal_strength": -85.0}
+{"ts": "2026-02-24T02:27:34.804100+00:00", "event": "sensor.reading", "cycle": 4, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.65, "humidity": 53.1, "battery": 81.0, "signal_strength": -68.0}
+{"ts": "2026-02-24T02:27:34.804663+00:00", "event": "solver.result", "cycle": 4, "feasible": 4, "total": 4, "cost": 6.3626, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:27:34.804899+00:00", "event": "device.power", "cycle": 4, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:27:34.805128+00:00", "event": "environment.summary", "cycle": 4, "environment": "flower", "temperature": 297.15, "humidity": 22.6, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:28:34.812454+00:00", "event": "cycle.start", "cycle": 5, "time": "21:28:34"}
+{"ts": "2026-02-24T02:28:34.812908+00:00", "event": "sensor.reading", "cycle": 5, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 297.15, "humidity": 22.6, "battery": 89.0, "signal_strength": -85.0}
+{"ts": "2026-02-24T02:28:34.813123+00:00", "event": "sensor.reading", "cycle": 5, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.65, "humidity": 53.9, "battery": 81.0, "signal_strength": -66.0}
+{"ts": "2026-02-24T02:28:34.813623+00:00", "event": "solver.result", "cycle": 5, "feasible": 4, "total": 4, "cost": 6.3441, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:28:34.813812+00:00", "event": "device.power", "cycle": 5, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:28:34.813958+00:00", "event": "environment.summary", "cycle": 5, "environment": "flower", "temperature": 297.15, "humidity": 22.6, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:29:34.822792+00:00", "event": "cycle.start", "cycle": 6, "time": "21:29:34"}
+{"ts": "2026-02-24T02:29:34.823395+00:00", "event": "sensor.reading", "cycle": 6, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 297.04999999999995, "humidity": 22.6, "battery": 89.0, "signal_strength": -81.0}
+{"ts": "2026-02-24T02:29:34.823693+00:00", "event": "sensor.reading", "cycle": 6, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.65, "humidity": 53.8, "battery": 81.0, "signal_strength": -67.0}
+{"ts": "2026-02-24T02:29:34.824313+00:00", "event": "solver.result", "cycle": 6, "feasible": 4, "total": 4, "cost": 6.3082, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:29:34.824528+00:00", "event": "device.power", "cycle": 6, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:29:34.824697+00:00", "event": "environment.summary", "cycle": 6, "environment": "flower", "temperature": 297.04999999999995, "humidity": 22.6, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:30:34.831477+00:00", "event": "cycle.start", "cycle": 7, "time": "21:30:34"}
+{"ts": "2026-02-24T02:30:34.831976+00:00", "event": "sensor.reading", "cycle": 7, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 297.04999999999995, "humidity": 22.6, "battery": 89.0, "signal_strength": -81.0}
+{"ts": "2026-02-24T02:30:34.832206+00:00", "event": "sensor.reading", "cycle": 7, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.54999999999995, "humidity": 53.6, "battery": 81.0, "signal_strength": -69.0}
+{"ts": "2026-02-24T02:30:34.832826+00:00", "event": "solver.result", "cycle": 7, "feasible": 4, "total": 4, "cost": 6.3087, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:30:34.833171+00:00", "event": "device.power", "cycle": 7, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:30:34.833478+00:00", "event": "environment.summary", "cycle": 7, "environment": "flower", "temperature": 297.04999999999995, "humidity": 22.6, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:31:34.842029+00:00", "event": "cycle.start", "cycle": 8, "time": "21:31:34"}
+{"ts": "2026-02-24T02:31:34.842495+00:00", "event": "sensor.missed", "cycle": 8, "sensor_id": "flower_sensor", "environment": "flower"}
+{"ts": "2026-02-24T02:31:34.842808+00:00", "event": "sensor.reading", "cycle": 8, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.54999999999995, "humidity": 53.6, "battery": 81.0, "signal_strength": -67.0}
+{"ts": "2026-02-24T02:31:34.843341+00:00", "event": "solver.result", "cycle": 8, "feasible": 4, "total": 4, "cost": 0.0, "device_states": {"flower_heater": "off", "flower_light": "off"}}
+{"ts": "2026-02-24T02:31:34.843553+00:00", "event": "device.command", "cycle": 8, "device_id": "flower_heater", "old_state": "on", "new_state": "off"}
+{"ts": "2026-02-24T02:32:34.849215+00:00", "event": "cycle.start", "cycle": 9, "time": "21:32:34"}
+{"ts": "2026-02-24T02:32:34.849863+00:00", "event": "sensor.reading", "cycle": 9, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 296.34999999999997, "humidity": 23.1, "battery": 89.0, "signal_strength": -80.0}
+{"ts": "2026-02-24T02:32:34.850231+00:00", "event": "sensor.reading", "cycle": 9, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.54999999999995, "humidity": 53.5, "battery": 81.0, "signal_strength": -65.0}
+{"ts": "2026-02-24T02:32:34.850927+00:00", "event": "solver.result", "cycle": 9, "feasible": 4, "total": 4, "cost": 5.8676, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:32:34.851224+00:00", "event": "device.command", "cycle": 9, "device_id": "flower_heater", "old_state": "off", "new_state": "on"}
+{"ts": "2026-02-24T02:32:34.852021+00:00", "event": "device.power", "cycle": 9, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:32:34.852246+00:00", "event": "environment.summary", "cycle": 9, "environment": "flower", "temperature": 296.34999999999997, "humidity": 23.1, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:33:34.859833+00:00", "event": "cycle.start", "cycle": 10, "time": "21:33:34"}
+{"ts": "2026-02-24T02:33:34.860298+00:00", "event": "sensor.reading", "cycle": 10, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 296.34999999999997, "humidity": 23.0, "battery": 89.0, "signal_strength": -82.0}
+{"ts": "2026-02-24T02:33:34.860581+00:00", "event": "sensor.reading", "cycle": 10, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.54999999999995, "humidity": 53.5, "battery": 81.0, "signal_strength": -64.0}
+{"ts": "2026-02-24T02:33:34.860976+00:00", "event": "solver.result", "cycle": 10, "feasible": 4, "total": 4, "cost": 5.9107, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:33:34.861178+00:00", "event": "device.power", "cycle": 10, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:33:34.861320+00:00", "event": "environment.summary", "cycle": 10, "environment": "flower", "temperature": 296.34999999999997, "humidity": 23.0, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:34:34.865706+00:00", "event": "cycle.start", "cycle": 11, "time": "21:34:34"}
+{"ts": "2026-02-24T02:34:34.866333+00:00", "event": "sensor.reading", "cycle": 11, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 295.84999999999997, "humidity": 23.4, "battery": 89.0, "signal_strength": -82.0}
+{"ts": "2026-02-24T02:34:34.866708+00:00", "event": "sensor.reading", "cycle": 11, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.54999999999995, "humidity": 53.7, "battery": 81.0, "signal_strength": -64.0}
+{"ts": "2026-02-24T02:34:34.867541+00:00", "event": "solver.result", "cycle": 11, "feasible": 4, "total": 4, "cost": 5.6175, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:34:34.868341+00:00", "event": "device.power", "cycle": 11, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:34:34.868655+00:00", "event": "environment.summary", "cycle": 11, "environment": "flower", "temperature": 295.84999999999997, "humidity": 23.4, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:35:34.876772+00:00", "event": "cycle.start", "cycle": 12, "time": "21:35:34"}
+{"ts": "2026-02-24T02:35:34.877317+00:00", "event": "sensor.reading", "cycle": 12, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 295.84999999999997, "humidity": 23.4, "battery": 89.0, "signal_strength": -82.0}
+{"ts": "2026-02-24T02:35:34.877602+00:00", "event": "sensor.reading", "cycle": 12, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.45, "humidity": 53.7, "battery": 81.0, "signal_strength": -65.0}
+{"ts": "2026-02-24T02:35:34.878045+00:00", "event": "solver.result", "cycle": 12, "feasible": 4, "total": 4, "cost": 5.6153, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:35:34.878234+00:00", "event": "device.power", "cycle": 12, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:35:34.878351+00:00", "event": "environment.summary", "cycle": 12, "environment": "flower", "temperature": 295.84999999999997, "humidity": 23.4, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:36:34.885746+00:00", "event": "cycle.start", "cycle": 13, "time": "21:36:34"}
+{"ts": "2026-02-24T02:36:34.886465+00:00", "event": "sensor.reading", "cycle": 13, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 295.45, "humidity": 24.1, "battery": 89.0, "signal_strength": -84.0}
+{"ts": "2026-02-24T02:36:34.886702+00:00", "event": "sensor.reading", "cycle": 13, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.45, "humidity": 53.3, "battery": 81.0, "signal_strength": -66.0}
+{"ts": "2026-02-24T02:36:34.887198+00:00", "event": "solver.result", "cycle": 13, "feasible": 4, "total": 4, "cost": 5.2649, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:36:34.887368+00:00", "event": "device.power", "cycle": 13, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:36:34.887486+00:00", "event": "environment.summary", "cycle": 13, "environment": "flower", "temperature": 295.45, "humidity": 24.1, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:37:34.895622+00:00", "event": "cycle.start", "cycle": 14, "time": "21:37:34"}
+{"ts": "2026-02-24T02:37:34.895922+00:00", "event": "sensor.reading", "cycle": 14, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 295.25, "humidity": 24.1, "battery": 89.0, "signal_strength": -85.0}
+{"ts": "2026-02-24T02:37:34.896075+00:00", "event": "sensor.reading", "cycle": 14, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.45, "humidity": 53.0, "battery": 81.0, "signal_strength": -65.0}
+{"ts": "2026-02-24T02:37:34.896386+00:00", "event": "solver.result", "cycle": 14, "feasible": 4, "total": 4, "cost": 5.2466, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:37:34.896515+00:00", "event": "device.power", "cycle": 14, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:37:34.896613+00:00", "event": "environment.summary", "cycle": 14, "environment": "flower", "temperature": 295.25, "humidity": 24.1, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:38:34.903640+00:00", "event": "cycle.start", "cycle": 15, "time": "21:38:34"}
+{"ts": "2026-02-24T02:38:34.904138+00:00", "event": "sensor.reading", "cycle": 15, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 295.25, "humidity": 24.2, "battery": 89.0, "signal_strength": -86.0}
+{"ts": "2026-02-24T02:38:34.904317+00:00", "event": "sensor.reading", "cycle": 15, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.45, "humidity": 53.0, "battery": 71.0, "signal_strength": -66.0}
+{"ts": "2026-02-24T02:38:34.904691+00:00", "event": "solver.result", "cycle": 15, "feasible": 4, "total": 4, "cost": 5.2056, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:38:34.904890+00:00", "event": "device.power", "cycle": 15, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:38:34.904999+00:00", "event": "environment.summary", "cycle": 15, "environment": "flower", "temperature": 295.25, "humidity": 24.2, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:39:34.909040+00:00", "event": "cycle.start", "cycle": 16, "time": "21:39:34"}
+{"ts": "2026-02-24T02:39:34.910578+00:00", "event": "sensor.reading", "cycle": 16, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 295.15, "humidity": 24.4, "battery": 87.0, "signal_strength": -81.0}
+{"ts": "2026-02-24T02:39:34.910826+00:00", "event": "sensor.reading", "cycle": 16, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.45, "humidity": 53.0, "battery": 71.0, "signal_strength": -65.0}
+{"ts": "2026-02-24T02:39:34.911386+00:00", "event": "solver.result", "cycle": 16, "feasible": 4, "total": 4, "cost": 5.1141, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:39:34.911585+00:00", "event": "device.power", "cycle": 16, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:39:34.911704+00:00", "event": "environment.summary", "cycle": 16, "environment": "flower", "temperature": 295.15, "humidity": 24.4, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:40:34.915276+00:00", "event": "cycle.start", "cycle": 17, "time": "21:40:34"}
+{"ts": "2026-02-24T02:40:34.916171+00:00", "event": "sensor.reading", "cycle": 17, "sensor_id": "flower_sensor", "environment": "flower", "temperature": 295.25, "humidity": 24.4, "battery": 87.0, "signal_strength": -81.0}
+{"ts": "2026-02-24T02:40:34.916525+00:00", "event": "sensor.reading", "cycle": 17, "sensor_id": "ambient_sensor", "environment": "ambient", "temperature": 275.34999999999997, "humidity": 53.2, "battery": 81.0, "signal_strength": -63.0}
+{"ts": "2026-02-24T02:40:34.917183+00:00", "event": "solver.result", "cycle": 17, "feasible": 4, "total": 4, "cost": 5.1188, "device_states": {"flower_heater": "on", "flower_light": "off"}}
+{"ts": "2026-02-24T02:40:34.917920+00:00", "event": "device.power", "cycle": 17, "device_id": "flower_heater", "watts": 1500.0}
+{"ts": "2026-02-24T02:40:34.918208+00:00", "event": "environment.summary", "cycle": 17, "environment": "flower", "temperature": 295.25, "humidity": 24.4, "target_min": 294.26111111111106, "target_max": 300.92777777777775, "target_ideal": 297.59444444444443}
+{"ts": "2026-02-24T02:41:34.925790+00:00", "event": "daemon.stop", "cycles": 17}

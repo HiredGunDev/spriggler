@@ -3,9 +3,6 @@
 These tests validate the driver against the SensorDriver contract
 WITHOUT requiring actual BLE hardware. They work by injecting
 synthetic advertisement data directly into the driver's callback.
-
-Tests requiring real hardware are in tests/test_govee_live.py
-and are skipped by default.
 """
 
 import time
@@ -14,28 +11,12 @@ import pytest
 from govee_ble import GoveeBluetoothDeviceData, SensorDeviceClass
 from habluetooth.models import BluetoothServiceInfo
 
-from spriggler.sensors.govee import GoveeSensor
+from spriggler.sensors.govee import GoveeSensor, _is_gateway
 from spriggler.sensors.base import SensorDriver
 from tests.conformance import SensorConformanceTests
 
 
 # ── Synthetic advertisement data ─────────────────────────────────────
-
-# Real manufacturer data captured from a Govee H5100.
-# Manufacturer ID 60552 (0xEC88) is Govee's BLE company ID.
-# The payload encodes temperature and humidity.
-#
-# To capture your own:
-#   python -c "
-#   import asyncio
-#   from bleak import BleakScanner
-#   async def scan():
-#       devices = await BleakScanner.discover(10, return_adv=True)
-#       for addr, (dev, adv) in devices.items():
-#           if 'GVH' in (adv.local_name or ''):
-#               print(f'{addr}: name={adv.local_name} mfr={adv.manufacturer_data}')
-#   asyncio.run(scan())
-#   "
 
 # H5100 advertisement: 22.3°C, 57.2% humidity, battery 76%
 # Encoding: data[2:6] → decode_temp_humid_battery_error
@@ -46,13 +27,13 @@ from tests.conformance import SensorConformanceTests
 H5100_MFR_ID = 60552
 H5100_MFR_DATA = bytes([0x00, 0x01, 0x03, 0x69, 0x54, 0x4C, 0x00, 0x00])
 
-# Build a synthetic BluetoothServiceInfo
-FAKE_ADDRESS = "A4:C1:38:AA:BB:CC"
+FAKE_MAC = "A4:C1:38:AA:BB:CC"
+FAKE_SUFFIX = "BBCC"
 
 
 def make_service_info(
-        address: str = FAKE_ADDRESS,
-        name: str = "GVH5100_AABBCC",
+        address: str = FAKE_MAC,
+        name: str = "GVH5100_BBCC",
         rssi: int = -65,
         mfr_id: int = H5100_MFR_ID,
         mfr_data: bytes = H5100_MFR_DATA,
@@ -69,22 +50,40 @@ def make_service_info(
     )
 
 
+# ── Helper to create drivers without starting the real scanner ───────
+
+def _patch_register():
+    """Monkey-patch _register to skip scanner startup for testing."""
+    original = GoveeSensor._register
+
+    def fake_register(cls, inst):
+        if inst._match_mode == 'mac':
+            cls._mac_instances[inst._address] = inst
+        else:
+            cls._suffix_instances[inst._address] = inst
+
+    GoveeSensor._register = classmethod(fake_register)
+    return original
+
+
+def _cleanup(original_register):
+    GoveeSensor._register = original_register
+    GoveeSensor._mac_instances.clear()
+    GoveeSensor._suffix_instances.clear()
+    GoveeSensor._scanner_running = False
+
+
 # ── Verify our synthetic data actually parses ────────────────────────
 
 class TestSyntheticDataValidity:
     """Ensure our test data is valid before testing the driver with it."""
 
     def test_govee_ble_recognizes_h5100(self):
-        """govee-ble library should recognize our synthetic data."""
         parser = GoveeBluetoothDeviceData()
         info = make_service_info()
-        assert parser.supported(info), (
-            "govee-ble does not recognize our synthetic H5100 data. "
-            "The manufacturer data bytes may need updating."
-        )
+        assert parser.supported(info)
 
     def test_govee_ble_parses_temperature(self):
-        """govee-ble should extract a temperature from our data."""
         parser = GoveeBluetoothDeviceData()
         info = make_service_info()
         update = parser.update(info)
@@ -95,12 +94,10 @@ class TestSyntheticDataValidity:
             if desc and desc.device_class == SensorDeviceClass.TEMPERATURE:
                 found_temp = True
                 temp_c = float(value.native_value)
-                # Should be a reasonable room temperature
                 assert -40 < temp_c < 80, f"Parsed temp {temp_c}°C seems wrong"
         assert found_temp, "No temperature found in parsed data"
 
     def test_govee_ble_parses_humidity(self):
-        """govee-ble should extract humidity from our data."""
         parser = GoveeBluetoothDeviceData()
         info = make_service_info()
         update = parser.update(info)
@@ -115,35 +112,36 @@ class TestSyntheticDataValidity:
         assert found_humidity, "No humidity found in parsed data"
 
 
-# ── Driver unit tests ────────────────────────────────────────────────
+# ── Gateway filtering ────────────────────────────────────────────────
 
-class TestGoveeSensorDriver:
-    """Test the GoveeSensor driver with synthetic advertisements."""
+class TestGatewayFiltering:
+    def test_h5151_is_gateway(self):
+        assert _is_gateway("Govee_H5151_401E")
+
+    def test_h5100_is_not_gateway(self):
+        assert not _is_gateway("GVH5100_2C6A")
+
+    def test_empty_name_is_not_gateway(self):
+        assert not _is_gateway("")
+
+
+# ── Driver unit tests (MAC matching) ─────────────────────────────────
+
+class TestGoveeSensorMAC:
+    """Test the GoveeSensor driver with MAC address matching."""
 
     @pytest.fixture(autouse=True)
-    def cleanup_scanner(self):
-        """Reset class-level scanner state between tests."""
+    def setup_teardown(self):
+        original = _patch_register()
         yield
-        GoveeSensor._scanner_running = False
-        GoveeSensor._instances.clear()
+        _cleanup(original)
 
     @pytest.fixture
     def driver(self):
-        """Create a driver instance without starting the real scanner."""
-        # Monkey-patch _register to skip scanner startup
-        original_register = GoveeSensor._register
-        GoveeSensor._register = classmethod(lambda cls, inst: (
-            cls._instances.__setitem__(inst._address, inst)
-        ))
-        try:
-            d = GoveeSensor({
-                'address': FAKE_ADDRESS,
-                'scan_timeout': 120,
-            })
-            yield d
-        finally:
-            GoveeSensor._register = original_register
-            GoveeSensor._instances.clear()
+        return GoveeSensor({
+            'address': FAKE_MAC,
+            'scan_timeout': 120,
+        })
 
     def test_is_sensor_driver(self, driver):
         assert isinstance(driver, SensorDriver)
@@ -151,12 +149,13 @@ class TestGoveeSensorDriver:
     def test_driver_name(self, driver):
         assert driver.driver_name == "govee_ble"
 
+    def test_match_mode_is_mac(self, driver):
+        assert driver._match_mode == 'mac'
+
     def test_read_before_any_advertisement(self, driver):
-        """No data yet — should return None."""
         assert driver.read() is None
 
     def test_read_after_advertisement(self, driver):
-        """Feed an advertisement, then read should return data."""
         info = make_service_info()
         driver._on_advertisement(info)
         reading = driver.read()
@@ -165,18 +164,13 @@ class TestGoveeSensorDriver:
         assert 'humidity' in reading
 
     def test_temperature_is_kelvin(self, driver):
-        """Temperature must be in Kelvin per driver contract."""
         info = make_service_info()
         driver._on_advertisement(info)
         reading = driver.read()
         temp = reading['temperature']
-        # Kelvin room temp is ~290-305
-        assert 250 < temp < 330, (
-            f"Temperature {temp} doesn't look like Kelvin"
-        )
+        assert 250 < temp < 330
 
     def test_humidity_is_percent(self, driver):
-        """Humidity must be %RH per driver contract."""
         info = make_service_info()
         driver._on_advertisement(info)
         reading = driver.read()
@@ -184,14 +178,12 @@ class TestGoveeSensorDriver:
         assert 0 <= hum <= 100
 
     def test_rssi_included(self, driver):
-        """RSSI should be in the reading."""
         info = make_service_info(rssi=-72)
         driver._on_advertisement(info)
         reading = driver.read()
         assert reading['signal_strength'] == -72
 
     def test_reading_is_copy(self, driver):
-        """read() should return a copy, not the internal dict."""
         info = make_service_info()
         driver._on_advertisement(info)
         r1 = driver.read()
@@ -200,59 +192,72 @@ class TestGoveeSensorDriver:
         assert r1 == r2
 
     def test_stale_reading_returns_none(self, driver):
-        """Readings older than scan_timeout should return None."""
         info = make_service_info()
         driver._on_advertisement(info)
-
-        # Force the timestamp to be old
         driver._last_reading_time = time.time() - 200
         assert driver.read() is None
 
-    def test_fresh_reading_within_timeout(self, driver):
-        """Readings within scan_timeout should be returned."""
-        info = make_service_info()
-        driver._on_advertisement(info)
-        # Reading just happened, should be fresh
-        assert driver.read() is not None
-
     def test_new_advertisement_replaces_old(self, driver):
-        """A new advertisement should update the cached reading."""
         info1 = make_service_info(rssi=-70)
         driver._on_advertisement(info1)
-        r1 = driver.read()
-
         info2 = make_service_info(rssi=-80)
         driver._on_advertisement(info2)
-        r2 = driver.read()
+        r = driver.read()
+        assert r['signal_strength'] == -80
 
-        assert r2['signal_strength'] == -80
 
-    def test_wrong_address_ignored(self, driver):
-        """Advertisements from other addresses should be ignored."""
-        info = make_service_info(address="FF:FF:FF:FF:FF:FF")
+# ── Driver unit tests (suffix matching) ──────────────────────────────
+
+class TestGoveeSensorSuffix:
+    """Test the GoveeSensor driver with name suffix matching."""
+
+    @pytest.fixture(autouse=True)
+    def setup_teardown(self):
+        original = _patch_register()
+        yield
+        _cleanup(original)
+
+    @pytest.fixture
+    def driver(self):
+        return GoveeSensor({
+            'address': FAKE_SUFFIX,
+            'scan_timeout': 120,
+        })
+
+    def test_match_mode_is_suffix(self, driver):
+        assert driver._match_mode == 'suffix'
+
+    def test_registered_in_suffix_instances(self, driver):
+        assert FAKE_SUFFIX in GoveeSensor._suffix_instances
+
+    def test_read_after_advertisement(self, driver):
+        info = make_service_info(
+            address="SOME-MACOS-UUID-HERE",
+            name="GVH5100_BBCC",
+        )
         driver._on_advertisement(info)
-        # Our driver is registered for FAKE_ADDRESS, not FF:FF:...
-        # But _on_advertisement is called directly, so it would still
-        # parse. The filtering happens in the scanner callback.
-        # This test verifies the parser doesn't crash on valid data
-        # from a different address.
+        reading = driver.read()
+        assert reading is not None
+        assert 'temperature' in reading
 
-    def test_multiple_instances_different_addresses(self):
-        """Multiple drivers for different addresses coexist."""
-        original_register = GoveeSensor._register
-        GoveeSensor._register = classmethod(lambda cls, inst: (
-            cls._instances.__setitem__(inst._address, inst)
-        ))
-        try:
-            d1 = GoveeSensor({'address': 'A4:C1:38:11:22:33', 'scan_timeout': 120})
-            d2 = GoveeSensor({'address': 'A4:C1:38:44:55:66', 'scan_timeout': 120})
+    def test_find_instance_by_suffix(self):
+        d = GoveeSensor({'address': '2C6A', 'scan_timeout': 120})
+        found = GoveeSensor._find_instance(
+            "RANDOM-UUID", "GVH5100_2C6A"
+        )
+        assert found is d
 
-            assert 'A4:C1:38:11:22:33' in GoveeSensor._instances
-            assert 'A4:C1:38:44:55:66' in GoveeSensor._instances
-            assert d1 is not d2
-        finally:
-            GoveeSensor._register = original_register
-            GoveeSensor._instances.clear()
+    def test_find_instance_by_mac(self):
+        d = GoveeSensor({'address': FAKE_MAC, 'scan_timeout': 120})
+        found = GoveeSensor._find_instance(FAKE_MAC, "GVH5100_BBCC")
+        assert found is d
+
+    def test_find_instance_unknown_returns_none(self):
+        GoveeSensor({'address': '2C6A', 'scan_timeout': 120})
+        found = GoveeSensor._find_instance(
+            "RANDOM-UUID", "GVH5100_9999"
+        )
+        assert found is None
 
 
 # ── Config validation tests ──────────────────────────────────────────
@@ -264,10 +269,10 @@ class TestGoveeConfigValidation:
         with pytest.raises(ValueError, match="address"):
             d.validate_config({})
 
-    def test_invalid_mac_raises(self):
+    def test_invalid_address_raises(self):
         d = GoveeSensor.__new__(GoveeSensor)
-        with pytest.raises(ValueError, match="MAC"):
-            d.validate_config({'address': 'not-a-mac'})
+        with pytest.raises(ValueError, match="Invalid"):
+            d.validate_config({'address': 'not-valid!'})
 
     def test_valid_mac_passes(self):
         d = GoveeSensor.__new__(GoveeSensor)
@@ -277,34 +282,38 @@ class TestGoveeConfigValidation:
         d = GoveeSensor.__new__(GoveeSensor)
         d.validate_config({'address': 'a4:c1:38:aa:bb:cc'})
 
+    def test_valid_suffix_passes(self):
+        d = GoveeSensor.__new__(GoveeSensor)
+        d.validate_config({'address': '2C6A'})
+
+    def test_lowercase_suffix_passes(self):
+        d = GoveeSensor.__new__(GoveeSensor)
+        d.validate_config({'address': '2c6a'})
+
 
 # ── Conformance harness ──────────────────────────────────────────────
 
 class TestGoveeConformance(SensorConformanceTests):
     """Run the standard sensor conformance tests against GoveeSensor."""
 
+    @pytest.fixture(autouse=True)
+    def setup_teardown(self):
+        original = _patch_register()
+        yield
+        _cleanup(original)
+
     @pytest.fixture
     def driver(self):
-        original_register = GoveeSensor._register
-        GoveeSensor._register = classmethod(lambda cls, inst: (
-            cls._instances.__setitem__(inst._address, inst)
-        ))
-        try:
-            d = GoveeSensor({
-                'address': FAKE_ADDRESS,
-                'scan_timeout': 120,
-            })
-            # Pre-load a reading so conformance tests have data
-            info = make_service_info()
-            d._on_advertisement(info)
-            yield d
-        finally:
-            GoveeSensor._register = original_register
-            GoveeSensor._instances.clear()
+        d = GoveeSensor({
+            'address': FAKE_MAC,
+            'scan_timeout': 120,
+        })
+        info = make_service_info()
+        d._on_advertisement(info)
+        return d
 
     @pytest.fixture
     def sample_reading(self):
-        """Provide a sample reading for conformance validation."""
         parser = GoveeBluetoothDeviceData()
         info = make_service_info()
         update = parser.update(info)
@@ -332,4 +341,4 @@ class TestGoveeConformance(SensorConformanceTests):
 
     @pytest.fixture
     def driver_config_invalid(self):
-        return {'address': 'not-valid'}
+        return {'address': 'not-valid!'}

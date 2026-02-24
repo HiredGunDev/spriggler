@@ -1,119 +1,68 @@
 {
-  "timestamp": "2026-02-20T22:52:46.188563+00:00",
-  "cycle": 2,
-  "config_mtime": "2026-02-20T22:10:55.530421+00:00",
+  "timestamp": "2026-02-24T02:40:34.918861+00:00",
+  "cycle": 17,
+  "config_mtime": "2026-02-23T21:52:13.465257+00:00",
   "config_error": null,
   "environments": {
-    "chamber": {
+    "flower": {
       "readings": {
-        "temperature": 296.27,
-        "humidity": 55.3,
-        "battery": 87,
-        "signal_strength": -72
+        "temperature": 295.25,
+        "humidity": 24.4,
+        "battery": 87.0,
+        "signal_strength": -81.0
       },
       "targets": {
         "temperature": {
-          "min": 295.3722222222222,
+          "min": 294.26111111111106,
           "max": 300.92777777777775,
-          "ideal": 298.15
+          "ideal": 297.59444444444443
         },
         "humidity": {
-          "min": 50,
+          "min": 45,
           "max": 65,
-          "ideal": 58
-        }
-      },
-      "safe_mode": false
-    },
-    "pod": {
-      "readings": {
-        "temperature": 298.05,
-        "humidity": 60.7,
-        "battery": 87,
-        "signal_strength": -72
-      },
-      "targets": {
-        "temperature": {
-          "min": 297.0388888888889,
-          "max": 300.92777777777775,
-          "ideal": 298.7055555555555
-        },
-        "humidity": {
-          "min": 60,
-          "max": 75,
-          "ideal": 68
+          "ideal": 55
         }
       },
       "safe_mode": false
     }
   },
   "devices": {
-    "chamber_heater": {
+    "flower_heater": {
       "state": "on",
       "power_watts": 1500.0,
       "locked_out": false,
       "manual_override": false
     },
-    "pod_heater": {
+    "flower_light": {
       "state": "off",
       "power_watts": 0.0,
-      "locked_out": false,
-      "manual_override": false
-    },
-    "chamber_exhaust": {
-      "state": "on",
-      "power_watts": 1500.0,
-      "locked_out": false,
-      "manual_override": false
-    },
-    "humidifier": {
-      "state": "high",
-      "power_watts": 1500.0,
-      "locked_out": false,
-      "manual_override": false
-    },
-    "transfer_fan": {
-      "state": "off",
-      "power_watts": 0.0,
-      "locked_out": false,
-      "manual_override": false
-    },
-    "chamber_light": {
-      "state": "on",
-      "power_watts": 1500.0,
       "locked_out": false,
       "manual_override": false
     }
   },
   "sensors": {
-    "chamber_sensor": {
+    "flower_sensor": {
       "stale": false,
       "missed_polls": 0,
-      "battery": 87,
-      "signal_strength": -72
-    },
-    "pod_sensor": {
-      "stale": false,
-      "missed_polls": 0,
-      "battery": 87,
-      "signal_strength": -72
+      "battery": 87.0,
+      "signal_strength": -81.0
     },
     "ambient_sensor": {
       "stale": false,
       "missed_polls": 0,
-      "battery": 87,
-      "signal_strength": -72
+      "battery": 81.0,
+      "signal_strength": -63.0
     }
   },
   "ambient": {
-    "temperature": 280.56,
-    "humidity": 40.3,
-    "battery": 87,
-    "signal_strength": -72
+    "temperature": 275.34999999999997,
+    "humidity": 53.2,
+    "battery": 81.0,
+    "signal_strength": -63.0
   },
   "solver": {
-    "last_cost": 2.3238,
-    "feasible_combinations": 48,
-    "total_combinations": 64
+    "last_cost": 5.1188,
+    "feasible_combinations": 4,
+    "total_combinations": 4
   }
 }

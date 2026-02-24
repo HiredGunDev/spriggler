@@ -17,6 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
+spriggler-daemon = "spriggler.daemon:main"
 spriggler = "spriggler.cli:main"
 
 [project.optional-dependencies]
