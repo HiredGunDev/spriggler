@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from spriggler.logging import StructuredLogger
+from spriggler.struct_log import StructuredLogger
 
 
 @pytest.fixture

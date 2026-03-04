@@ -223,36 +223,46 @@ class TestAutoRecovery:
 class TestAbsoluteLimits:
 
     def test_temp_below_absolute_min(self, monitor):
-        """Temperature below absolute_min triggers safe mode."""
+        """Temperature below absolute_min triggers corrective commands."""
         monitor.report_sensor_reading(
             'temp_sensor', {'temperature': 35}, 1000.0
         )
         commands, alerts = monitor.evaluate(1000.0)
-        assert monitor.is_environment_in_safe_mode('chamber')
+        command_dict = dict(commands)
+        # Too cold: heater ON to warm up, exhaust OFF to retain heat
+        assert command_dict.get('heater') == 'on'
+        assert command_dict.get('exhaust') == 'off'
 
     def test_temp_above_absolute_max(self, monitor):
-        """Temperature above absolute_max triggers safe mode."""
+        """Temperature above absolute_max triggers corrective commands."""
         monitor.report_sensor_reading(
             'temp_sensor', {'temperature': 115}, 1000.0
         )
         commands, alerts = monitor.evaluate(1000.0)
-        assert monitor.is_environment_in_safe_mode('chamber')
+        command_dict = dict(commands)
+        # Too hot: heater OFF, exhaust ON to cool down
+        assert command_dict.get('heater') == 'off'
+        assert command_dict.get('exhaust') == 'on'
 
     def test_humidity_below_absolute_min(self, monitor):
-        """Humidity below absolute_min triggers safe mode."""
+        """Humidity below absolute_min triggers corrective commands."""
         monitor.report_sensor_reading(
             'temp_sensor', {'temperature': 75, 'humidity': 5}, 1000.0
         )
         commands, alerts = monitor.evaluate(1000.0)
-        assert monitor.is_environment_in_safe_mode('chamber')
+        # Too dry: exhaust OFF (exhaust is a dehumidifying role)
+        command_dict = dict(commands)
+        assert command_dict.get('exhaust') == 'off'
 
     def test_humidity_above_absolute_max(self, monitor):
-        """Humidity above absolute_max triggers safe mode."""
+        """Humidity above absolute_max triggers corrective commands."""
         monitor.report_sensor_reading(
             'temp_sensor', {'temperature': 75, 'humidity': 98}, 1000.0
         )
         commands, alerts = monitor.evaluate(1000.0)
-        assert monitor.is_environment_in_safe_mode('chamber')
+        # Too humid: exhaust ON (exhaust is a dehumidifying role)
+        command_dict = dict(commands)
+        assert command_dict.get('exhaust') == 'on'
 
     def test_limit_breach_generates_emergency_alert(self, monitor):
         """Absolute limit breach should generate emergency alert."""
@@ -264,15 +274,14 @@ class TestAbsoluteLimits:
         assert len(emergency_alerts) > 0
 
     def test_limit_breach_commands_safe_states(self, monitor):
-        """Absolute limit breach should command devices to safe states."""
+        """Temp below min should command heater on and exhaust off."""
         monitor.report_sensor_reading(
             'temp_sensor', {'temperature': 35}, 1000.0
         )
         commands, alerts = monitor.evaluate(1000.0)
-        # Heater should be commanded off, exhaust should be commanded on
         command_dict = dict(commands)
-        assert command_dict.get('heater') == 'off'
-        assert command_dict.get('exhaust') == 'on'
+        assert command_dict.get('heater') == 'on'
+        assert command_dict.get('exhaust') == 'off'
 
     def test_normal_reading_no_safe_mode(self, monitor):
         """Normal readings should not trigger safe mode."""
@@ -528,17 +537,21 @@ class TestMultiEnvironment:
         assert not monitor.is_environment_in_safe_mode('flower')
 
     def test_limit_breach_only_affects_its_environment(self, two_env_config):
-        """Limit breach in one environment should not affect the other."""
+        """Limit breach in one environment should only command devices in that environment."""
         monitor = SafetyMonitor(two_env_config)
 
-        # Chamber breaches limit
+        # Chamber breaches limit (too cold)
         monitor.report_sensor_reading(
             'temp_sensor', {'temperature': 35}, 1000.0
         )
         commands, alerts = monitor.evaluate(1000.0)
 
-        assert monitor.is_environment_in_safe_mode('chamber')
-        assert not monitor.is_environment_in_safe_mode('flower')
+        # Only chamber devices should have commands
+        command_dict = dict(commands)
+        assert command_dict.get('heater') == 'on'  # chamber heater
+        assert command_dict.get('exhaust') == 'off'  # chamber exhaust
+        # Flower devices should not be affected
+        assert 'flower_heater' not in command_dict
 
     def test_independent_recovery(self, two_env_config):
         """Each environment recovers independently."""
@@ -557,4 +570,3 @@ class TestMultiEnvironment:
 
         assert not monitor.is_environment_in_safe_mode('chamber')
         assert monitor.is_environment_in_safe_mode('flower')
-

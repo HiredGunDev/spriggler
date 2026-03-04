@@ -114,7 +114,7 @@ class SafetyMonitor:
     # ── Public interface ─────────────────────────────────────────────────
 
     def report_sensor_reading(
-        self, sensor_id: str, reading: dict, timestamp: float
+            self, sensor_id: str, reading: dict, timestamp: float
     ) -> None:
         """Report a successful sensor reading.
 
@@ -166,7 +166,7 @@ class SafetyMonitor:
             self._enter_safe_mode(sensor.environment)
 
     def report_device_command(
-        self, device_id: str, commanded_on: bool, timestamp: float
+            self, device_id: str, commanded_on: bool, timestamp: float
     ) -> None:
         """Report that a device command was issued.
 
@@ -276,9 +276,23 @@ class SafetyMonitor:
                     )
 
     def _check_absolute_limits(self) -> list[tuple[str, str]]:
-        """Check if any environment has breached absolute limits."""
+        """Check if any environment has breached absolute limits.
+
+        Instead of blanket safe mode, issue corrective commands:
+        - Temperature below min → heaters ON, coolers/fans OFF
+        - Temperature above max → heaters OFF, coolers/fans ON
+        - Humidity below min → humidifiers ON, dehumidifiers OFF
+        - Humidity above max → humidifiers OFF, dehumidifiers ON
+        """
         commands = []
         env_safety = self._safety.get('environments', {})
+
+        # Role → property → direction mappings
+        HEATING_ROLES = {'heater', 'light'}
+        COOLING_ROLES = {'cooler', 'dehumidifier', 'exhaust', 'intake',
+                         'circulation', 'fan', 'vent'}
+        HUMIDIFYING_ROLES = {'humidifier'}
+        DEHUMIDIFYING_ROLES = {'dehumidifier', 'exhaust'}
 
         for sensor_id, sensor in self._sensors.items():
             if sensor.is_stale or sensor.last_reading is None:
@@ -302,7 +316,8 @@ class SafetyMonitor:
                         f"ABSOLUTE MINIMUM breached in '{sensor.environment}': "
                         f"{prop} = {value} (limit: {abs_min})"
                     )
-                    cmds = self._enter_safe_mode(sensor.environment)
+                    cmds = self._corrective_commands(
+                        sensor.environment, prop, 'below_min')
                     commands.extend(cmds)
 
                 if abs_max is not None and value > abs_max:
@@ -311,8 +326,67 @@ class SafetyMonitor:
                         f"ABSOLUTE MAXIMUM breached in '{sensor.environment}': "
                         f"{prop} = {value} (limit: {abs_max})"
                     )
-                    cmds = self._enter_safe_mode(sensor.environment)
+                    cmds = self._corrective_commands(
+                        sensor.environment, prop, 'above_max')
                     commands.extend(cmds)
+
+        return commands
+
+    def _corrective_commands(
+            self, environment: str, prop: str, violation: str
+    ) -> list[tuple[str, str]]:
+        """Generate device commands to correct a limit violation.
+
+        Args:
+            environment: The affected environment.
+            prop: The property that breached ('temperature', 'humidity').
+            violation: 'below_min' or 'above_max'.
+
+        Returns:
+            List of (device_id, target_state) commands.
+        """
+        HEATING_ROLES = {'heater', 'light'}
+        COOLING_ROLES = {'cooler', 'dehumidifier', 'exhaust', 'intake',
+                         'circulation', 'fan', 'vent'}
+        HUMIDIFYING_ROLES = {'humidifier'}
+        DEHUMIDIFYING_ROLES = {'dehumidifier', 'exhaust'}
+
+        commands = []
+        for device_id, device in self._devices.items():
+            if device.environment != environment:
+                continue
+            if device.is_locked_out:
+                continue
+
+            role = self._config['devices'][device_id].get('role', '')
+
+            if prop == 'temperature':
+                if violation == 'below_min':
+                    # Too cold: heaters on, coolers off
+                    if role in HEATING_ROLES:
+                        commands.append((device_id, 'on'))
+                    elif role in COOLING_ROLES:
+                        commands.append((device_id, 'off'))
+                elif violation == 'above_max':
+                    # Too hot: heaters off, coolers on
+                    if role in HEATING_ROLES:
+                        commands.append((device_id, 'off'))
+                    elif role in COOLING_ROLES:
+                        commands.append((device_id, 'on'))
+
+            elif prop == 'humidity':
+                if violation == 'below_min':
+                    # Too dry: humidifiers on, dehumidifiers off
+                    if role in HUMIDIFYING_ROLES:
+                        commands.append((device_id, 'on'))
+                    elif role in DEHUMIDIFYING_ROLES:
+                        commands.append((device_id, 'off'))
+                elif violation == 'above_max':
+                    # Too humid: humidifiers off, dehumidifiers on
+                    if role in HUMIDIFYING_ROLES:
+                        commands.append((device_id, 'off'))
+                    elif role in DEHUMIDIFYING_ROLES:
+                        commands.append((device_id, 'on'))
 
         return commands
 
@@ -341,7 +415,7 @@ class SafetyMonitor:
             env_sensors = [
                 s for s in self._sensors.values()
                 if s.environment == env and s.last_reading is not None
-                and not s.is_stale
+                   and not s.is_stale
             ]
 
             if not env_sensors:
@@ -427,4 +501,3 @@ class SafetyMonitor:
     def _alert(self, level: AlertLevel, source: str, message: str) -> None:
         """Record an alert."""
         self._alerts.append(Alert(level=level, source=source, message=message))
-

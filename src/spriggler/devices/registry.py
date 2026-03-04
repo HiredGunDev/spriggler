@@ -6,6 +6,12 @@ DEVICE_DRIVERS: dict[str, type] = {
     'mock': MockDevice,
 }
 
+try:
+    from spriggler.devices.kasa_device import KasaDevice
+    DEVICE_DRIVERS['kasa_plug'] = KasaDevice
+except ImportError:
+    pass
+
 
 def get_device_driver(name: str) -> type:
     """Look up a device driver class by name."""

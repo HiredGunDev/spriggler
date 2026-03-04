@@ -29,11 +29,13 @@ Design principles:
 
 
 def predict(
-    current_readings: dict[str, dict[str, float]],
-    ambient: dict[str, float],
-    proposed_states: dict[str, str],
-    calibration: dict,
-    device_env_map: dict[str, str],
+        current_readings: dict[str, dict[str, float]],
+        ambient: dict[str, float],
+        proposed_states: dict[str, str],
+        calibration: dict,
+        device_env_map: dict[str, str],
+        current_device_states: dict[str, str] | None = None,
+        coast_data: dict[str, dict] | None = None,
 ) -> dict[str, dict[str, float]]:
     """Predict environment state after one control cycle.
 
@@ -51,6 +53,13 @@ def predict(
             }}
         device_env_map: {device_id: env_id}
             Which environment each device belongs to.
+        current_device_states: {device_id: state_name}
+            What devices are doing RIGHT NOW (before this proposal).
+            Used for coast prediction: if a device is currently ON and
+            the proposal turns it OFF, coast overshoot is applied.
+        coast_data: {device_id: {property: {overshoot: float, duration: float}}}
+            Coast calibration data from device characterization.
+            overshoot is signed: positive for heating, negative for cooling.
 
     Returns:
         {env_id: {property: predicted_value}} for every environment
@@ -98,24 +107,46 @@ def predict(
 
         predicted[env_id] = env_predicted
 
+        # Apply coast overshoot for devices transitioning from ON to OFF
+        if current_device_states and coast_data:
+            for device_id, proposed in proposed_states.items():
+                if device_env_map.get(device_id) != env_id:
+                    continue
+
+                current = current_device_states.get(device_id)
+                if current is None or current == 'off' or proposed != 'off':
+                    continue
+
+                # Device is currently ON, proposal turns it OFF -- coast
+                dev_coast = coast_data.get(device_id, {})
+                for prop, coast_info in dev_coast.items():
+                    overshoot = coast_info.get('overshoot', 0)
+                    if prop in env_predicted and abs(overshoot) > 0.01:
+                        env_predicted[prop] += overshoot
+
     return predicted
 
 
 def make_solver_predict_fn(
-    ambient: dict[str, float],
-    calibration: dict,
-    device_env_map: dict[str, str],
+        ambient: dict[str, float],
+        calibration: dict,
+        device_env_map: dict[str, str],
+        current_device_states: dict[str, str] | None = None,
+        coast_data: dict[str, dict] | None = None,
 ):
     """Create a predict_fn suitable for passing to the solver.
 
     The solver expects: predict_fn(current_readings, proposed_states)
-    This factory curries the ambient, calibration, and device_env_map
-    so the solver doesn't need to know about them.
+    This factory curries the ambient, calibration, device_env_map,
+    current device states, and coast data so the solver doesn't need
+    to know about them.
 
     Args:
         ambient: Current ambient readings.
         calibration: Calibration data dict.
         device_env_map: {device_id: env_id} mapping.
+        current_device_states: {device_id: state} what devices are doing now.
+        coast_data: {device_id: {prop: {overshoot, duration}}} from calibration.
 
     Returns:
         A callable(current_readings, proposed_states) -> predicted_readings.
@@ -127,6 +158,7 @@ def make_solver_predict_fn(
             proposed_states=proposed_states,
             calibration=calibration,
             device_env_map=device_env_map,
+            current_device_states=current_device_states,
+            coast_data=coast_data,
         )
     return solver_predict
-
