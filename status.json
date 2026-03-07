@@ -1,16 +1,16 @@
 {
-  "timestamp": "2026-03-04T02:36:20.645320+00:00",
-  "running": true,
-  "cycle": 389,
+  "timestamp": "2026-03-06T21:19:57.593382+00:00",
+  "running": false,
+  "cycle": 246,
   "config_mtime": "2026-02-27T22:15:17.939058+00:00",
   "config_error": null,
   "environments": {
     "seedling": {
       "readings": {
-        "temperature": 302.34999999999997,
-        "humidity": 29.0,
-        "battery": 92.0,
-        "signal_strength": -85.0
+        "temperature": 300.25,
+        "humidity": 40.9,
+        "battery": 90.0,
+        "signal_strength": -81.0
       },
       "targets": {
         "temperature": {
@@ -29,20 +29,20 @@
   },
   "devices": {
     "seedling_heater": {
-      "state": "on",
-      "power_watts": 628.008,
+      "state": "off",
+      "power_watts": 0.0,
       "locked_out": false,
       "manual_override": false
     },
     "seedling_light": {
       "state": "on",
-      "power_watts": 39.739,
+      "power_watts": 39.411,
       "locked_out": false,
       "manual_override": false
     },
     "seedling_fan": {
-      "state": "off",
-      "power_watts": 0.0,
+      "state": "on",
+      "power_watts": 2.489,
       "locked_out": false,
       "manual_override": false
     }
@@ -51,24 +51,24 @@
     "seedling_sensor": {
       "stale": false,
       "missed_polls": 0,
-      "battery": 92.0,
-      "signal_strength": -85.0
+      "battery": 90.0,
+      "signal_strength": -81.0
     },
     "ambient_sensor": {
       "stale": false,
       "missed_polls": 0,
-      "battery": 79.0,
-      "signal_strength": -72.0
+      "battery": 77.0,
+      "signal_strength": -74.0
     }
   },
   "ambient": {
-    "temperature": 279.65,
-    "humidity": 90.1,
-    "battery": 79.0,
-    "signal_strength": -72.0
+    "temperature": 289.34999999999997,
+    "humidity": 68.4,
+    "battery": 77.0,
+    "signal_strength": -74.0
   },
   "solver": {
-    "last_cost": 7.9591,
+    "last_cost": 3.2168,
     "feasible_combinations": 4,
     "total_combinations": 4
   }

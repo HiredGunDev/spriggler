@@ -12,6 +12,12 @@ try:
 except ImportError:
     pass
 
+try:
+    from spriggler.devices.vesync_device import VeSyncHumidifier
+    DEVICE_DRIVERS['vesync_humidifier'] = VeSyncHumidifier
+except ImportError:
+    pass
+
 
 def get_device_driver(name: str) -> type:
     """Look up a device driver class by name."""

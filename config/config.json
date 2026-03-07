@@ -49,7 +49,7 @@
         "plug": "Heater"
       },
       "power_sensor": {
-        "driver": "kasa_strip",
+        "driver": "kasa_plug",
         "driver_config": {
           "strip": "seedling",
           "plug": "Heater"
@@ -66,7 +66,7 @@
         "plug": "Lights"
       },
       "power_sensor": {
-        "driver": "kasa_strip",
+        "driver": "kasa_plug",
         "driver_config": {
           "strip": "seedling",
           "plug": "Lights"
@@ -83,10 +83,28 @@
         "plug": "Fan"
       },
       "power_sensor": {
-        "driver": "kasa_strip",
+        "driver": "kasa_plug",
         "driver_config": {
           "strip": "seedling",
           "plug": "Fan"
+        }
+      }
+    },
+    "seedling_humidifier": {
+      "driver": "vesync_humidifier",
+      "environment": "seedling",
+      "circuit": "seedling_circuit",
+      "role": "humidifier",
+      "driver_config": {
+        "name": "Dual 200S",
+        "email": "bill@hiredgun.dev",
+        "password": "VEEnterpriseNX01"
+      },
+      "power_sensor": {
+        "driver": "kasa_plug",
+        "driver_config": {
+          "strip": "seedling",
+          "plug": "Humidifier"
         }
       }
     }
@@ -157,6 +175,10 @@
       "seedling_fan": {
         "safe_state": "on",
         "coherence_window_seconds": 120
+      },
+      "seedling_humidifier": {
+        "safe_state": "off",
+        "coherence_window_seconds": 300
       }
     },
     "sensor_stale_after_missed": 3,

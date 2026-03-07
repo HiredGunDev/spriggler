@@ -299,7 +299,12 @@ def run_device_characterization(home: Path, args) -> None:
     rate_ests = {}    # {prop: RateEstimator}
     decay_ests = {}   # {prop: DecayEstimator}
     active_samples = []
-    dev_driver.set_state('on')
+
+    # For graduated devices (e.g., humidifier with ['off', 'low', 'high']),
+    # characterize at the highest output state.  Binary devices have
+    # ['off', 'on'] so this resolves to 'on'.
+    active_state = dev_driver.get_available_states()[-1]
+    dev_driver.set_state(active_state)
     active_start = time.time()
     max_active_s = args.max_active_minutes * 60
     safety_stopped = False
@@ -646,13 +651,14 @@ def run_device_characterization(home: Path, args) -> None:
         'environment': dev_env,
         'calibrated_at': now_iso,
         'power_draw_watts': round(power_watts, 2) if power_watts else None,
-        'effects': {'on': {}},
+        'active_state': active_state,
+        'effects': {active_state: {}},
     }
 
     for e in effects:
         ek = e.environment
-        if ek not in device_cal['effects']['on']:
-            device_cal['effects']['on'][ek] = {}
+        if ek not in device_cal['effects'][active_state]:
+            device_cal['effects'][active_state][ek] = {}
         ed = {
             'direction': e.direction,
             'rate_per_second': e.rate_per_second,
@@ -665,7 +671,7 @@ def run_device_characterization(home: Path, args) -> None:
             ed['conductance_delta'] = e.conductance_delta
         if e.conductance_delta_se is not None:
             ed['conductance_delta_se'] = e.conductance_delta_se
-        device_cal['effects']['on'][ek][e.property_name] = ed
+        device_cal['effects'][active_state][ek][e.property_name] = ed
 
     # Coast characterization
     if coast_data:
@@ -954,8 +960,16 @@ def _load_power_cal(home, device_id):
         return None
     try:
         d = json.loads(p.read_text())
-        return d.get('devices', {}).get(device_id, {}).get(
-            'states', {}).get('on', {}).get('watts_mean')
+        states = d.get('devices', {}).get(device_id, {}).get('states', {})
+        # Find the highest-power non-off state
+        best_watts = None
+        for state_name, state_data in states.items():
+            if state_name == 'off':
+                continue
+            w = state_data.get('watts_mean')
+            if w is not None and (best_watts is None or w > best_watts):
+                best_watts = w
+        return best_watts
     except (json.JSONDecodeError, KeyError):
         return None
 
@@ -982,7 +996,13 @@ def _find_helper_device(home, config, env_id, exclude):
             continue
         try:
             cd = json.loads(cp.read_text())
-            eff = cd.get('effects', {}).get('on', {})
+            # Find effects for any active state (not just 'on')
+            all_effects = cd.get('effects', {})
+            eff = {}
+            for state_name, state_eff in all_effects.items():
+                if state_name != 'off' and state_eff:
+                    eff = state_eff
+                    break
             te = eff.get(env_id, {}).get('temperature', {})
             if not te:
                 te = eff.get('temperature', {})

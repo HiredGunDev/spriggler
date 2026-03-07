@@ -6,131 +6,142 @@ Environmental control daemon for grow rooms, greenhouses, aquaculture, fermentat
 
 Spriggler monitors sensors and controls devices to maintain target conditions across one or more environments. It doesn't use thresholds and rules. It uses physics.
 
-During calibration, Spriggler measures what each device actually does to your specific space — how fast your heater raises temperature, how leaky your shed is, how your exhaust fan affects humidity. It derives physical constants (envelope conductance, device energy contributions) that remain valid across seasons and conditions. At runtime, a constrained optimizer solves for the best combination of device states to reach targets with minimum energy.
+During calibration, Spriggler measures what each device actually does to your specific space — how fast your heater raises temperature, how leaky your tent is, how your exhaust fan affects humidity, how much thermal overshoot occurs after a heater shuts off. It derives physical constants (envelope conductance, device energy contributions, coast overshoot) that remain valid across seasons and conditions.
 
-When things go wrong — and they will — Spriggler reasons about the situation the way a competent human would. If a heater fails in one chamber but there's excess heat in another, it discovers that running the inter-chamber fan is cheaper than panicking. If conditions are fine despite a device failure, it shrugs and moves on. A continuous cost function drives resources to wherever the situation is most dire, without static priority rankings.
+At runtime, a constrained optimizer solves for the best combination of device states to reach targets with minimum energy. The physics model predicts where each candidate combination will land — including thermal inertia effects — and the solver picks the lowest-cost option. The safety monitor has independent veto authority over every decision.
 
 ## Key Features
 
 - **Physics-based solver.** Not rules, not thresholds. Thermodynamics. The solver knows that heating air reduces humidity, that moving air between spaces transfers both heat and moisture, and that your circuit breaker has a limit.
-- **Learns your setup.** Active calibration derives the R-value of your space and the energy contribution of each device in a few hours. No manual entry of watts, CFM, or guesswork. Recalibration happens passively during normal operation — model drift is treated as diagnostic information ("your insulation changed"), not a calibration problem.
+- **Coast compensation.** The model accounts for thermal inertia — a heater turned off at 76°F will coast to 80°F. The solver sees this and shuts off early, landing in the target zone instead of overshooting.
+- **Learns your setup.** Active calibration derives the thermal time constant of your space and the energy contribution of each device in under an hour. No manual entry of watts, CFM, or guesswork.
 - **Multi-environment optimization.** Manages multiple chambers simultaneously. Excess heat in one room warms another instead of running a heater. Failed device in one space triggers cross-environment resource sharing automatically.
-- **Safety-first.** Independent safety monitor with veto authority over the solver. Hardware-level failsafe timers ensure devices enter safe states even if Spriggler crashes. Three layers of safety: hardware countdowns, safety monitor, solver constraints.
-- **Domain-agnostic.** The solver knows nothing about plants, fish, or fermentation. It knows about temperatures, differentials, and cost functions. Your domain knowledge lives in the configuration — tight limits for fragile seedlings, wide limits for hardy specimens. The solver does the math.
-- **Explainable.** Every decision traces to measured data and solved constraints. Structured JSON-lines logging means every cycle is auditable. "Why did you turn on the fan?" has a real answer.
-- **Local-only.** All data stays on your device. No cloud, no accounts, no telemetry.
+- **Safety-first.** Independent safety monitor with veto authority over the solver. Hardware-level failsafe timers (KASA countdown) ensure devices enter safe states even if Spriggler crashes.
+- **Domain-agnostic.** The solver knows nothing about plants, fish, or fermentation. It knows about temperatures, differentials, and cost functions. Your domain knowledge lives in the configuration.
+- **Explainable.** Every decision traces to measured data and solved constraints. Structured JSON-lines logging means every cycle is auditable.
+- **Local-first.** Sensor data and device control stay local wherever possible. VeSync humidifiers require cloud connectivity (no local API exists).
 
 ## Hardware
 
-**Supported sensors:**
+**Sensors:**
 - Govee H5100/H5075 Bluetooth thermometer/hygrometer (via govee-ble + bleak)
-    - Dual addressing: MAC address (Linux) or BLE name suffix (macOS)
-    - Gateway filtering (H5151 hub advertisements ignored)
 
-**Supported devices:**
+**Devices:**
+- TP-Link KASA smart plugs and power strips — on/off control with power monitoring, hardware countdown safety timers, fully local control
+- Levoit VeSync humidifiers (Dual 200S tested) — graduated mist level control via VeSync cloud API
 - Mock driver for development and testing
-- TP-Link KASA smart plugs and power strips *(driver in progress)*
-- VeSync humidifiers *(driver planned)*
 
-Drivers are modular with a defined contract and conformance test suite. See [Writing Drivers](docs/drivers.md) for adding hardware support.
+Drivers are modular with a defined contract and conformance test suite.
+
+## Current Setup
+
+Running on a Mac Mini controlling a seedling tent:
+
+| Device | Driver | Role | Notes |
+|---|---|---|---|
+| HS300 power strip | kasa_plug | — | 3 outlets used |
+| Ceramic heater (549W) | kasa_plug | heater | Coast overshoot: 4.3K / 7.7°F |
+| LED grow light (40W) | kasa_plug | light | Net cooling effect (envelope loss > heat output) |
+| USB exhaust fan (2.5W) | kasa_plug | exhaust | Transfers heat/humidity to ambient |
+| Levoit Dual 200S | vesync_humidifier | humidifier | 2 mist levels, cloud-only control |
+| Govee H5100 (×2) | govee_ble | sensor | Seedling + ambient temperature/humidity |
+
+Envelope time constant: ~28 minutes (τ = 1668s). Calibrated conductance: 0.000599/s.
 
 ## Installation
 
 **Requirements:**
-- Python 3.10+
-- Bluetooth-capable host (Raspberry Pi recommended, macOS supported for development)
+- Python 3.11+
+- Bluetooth-capable host (Raspberry Pi or Mac)
+- pyvesync >= 3.0 (for VeSync humidifier support)
 
 ```bash
-git clone https://github.com/your-repo/spriggler.git
+git clone <repo>
 cd spriggler
-pip install -e .
+pip install -e ".[dev]"
 ```
 
-## Quick Start
+## Usage
 
 ```bash
-# 1. Describe your setup
-cp config/example.json config/mysetup.json
-nano config/mysetup.json
+# Calibrate (stop daemon first)
+spriggler --home ~/Projects/spriggler calibrate all
 
-# 2. Start the daemon
-spriggler-daemon --config config/mysetup.json
+# Run the daemon
+python -m spriggler --home ~/Projects/spriggler
 
-# 3. Watch it work
-spriggler display
+# Check status
+spriggler --home ~/Projects/spriggler status
+```
 
-# 4. (future) Run calibration
-spriggler calibrate --config config/mysetup.json
+## Home Directory
 
-# 5. (future) Understand a decision
-spriggler explain --cycle 42
+All Spriggler files live under one root:
+
+```
+$SPRIGGLER_HOME/
+├── config/
+│   └── config.json         # User configuration
+├── calibration/
+│   ├── power.json          # Measured device wattage
+│   ├── seedling_heater.json # Device thermal characterization
+│   ├── seedling_light.json
+│   ├── seedling_fan.json
+│   └── envelope_seedling.json # Envelope thermal time constant
+├── status.json             # Daemon heartbeat + current state
+└── logs/
+    └── spriggler.log       # Structured JSON-lines event log
 ```
 
 ## Architecture
 
-Two executables, clean separation:
+Two entry points:
 
-**`spriggler-daemon`** — the control loop. Runs forever, reads config, reads sensors, solves for optimal device states, writes status and logs. All output goes to a state directory (`~/.spriggler/` by default).
+**`python -m spriggler`** — the daemon. Reads config, reads calibration data, runs the control loop (default 15s cycles), writes status and logs.
 
-**`spriggler <command>`** — the CLI. Reads the state directory, never touches hardware.
+**`spriggler <command>`** — the CLI. `calibrate`, `status`, `check`.
 
-| Command | Status | Description |
-|---|---|---|
-| `spriggler display` | ✅ Implemented | Live curses dashboard |
-| `spriggler status` | Planned | One-shot status dump |
-| `spriggler explain` | Planned | Explain solver decisions from logs |
-| `spriggler calibrate` | Planned | Run calibration experiments |
-| `spriggler check` | Planned | Validate config and exit |
+No IPC between daemon and CLI. All coordination through the filesystem.
 
-No IPC between daemon and CLI. All coordination through the filesystem: `status.json` for current state, `spriggler.log` for structured event history. A UI crash cannot take down the daemon.
+### Control Loop
 
-## State Directory
+Each cycle:
+1. Read all sensors (Govee BLE)
+2. Safety monitor evaluates — any absolute limits breached? Force safe states.
+3. Resolve schedule targets for current time
+4. Physics model predicts outcome of each candidate device combination
+5. Solver picks lowest-cost combination (brute-force enumeration, ~4-12 combos)
+6. Safety monitor reviews — veto if needed
+7. Execute device commands (KASA local, VeSync cloud)
+8. Log everything
 
-All daemon output lives in `~/.spriggler/` (override with `--state-dir` or `SPRIGGLER_STATE_DIR`):
-
-| File | Description |
-|---|---|
-| `status.json` | Current state, written every cycle. Includes `running` flag for daemon health. |
-| `spriggler.log` | Structured JSON-lines event log. Every sensor reading, solver decision, device command, safety event. |
-| `calibration/` | *(future)* Learned physical constants per device and environment. |
-
-## Package Structure
+### Physics Model
 
 ```
-src/spriggler/
-    cli/            CLI entry point and subcommands
-      display.py    Live curses dashboard
-    config/         Config loader with unit conversion
-    sensors/        Sensor driver ABC, registry, implementations
-      govee.py      Govee BLE driver (H5100/H5075)
-      mock.py       Mock sensor for testing
-    devices/        Device driver ABC, registry, implementations
-      mock.py       Mock device for testing
-    physics/        Thermodynamic model and predict functions
-    safety/         Independent safety monitor with veto authority
-    solver/         Constrained optimizer and cost functions
-    daemon.py       Main control loop
-    logging.py      Structured JSON-lines logger
-    state.py        State directory resolution
-    schedule.py     Time-based target and device override resolution
-    units.py        Temperature unit conversion
+predicted = current - conductance × (current - ambient) + Σ device_contributions + coast_overshoot
 ```
+
+Calibration files provide conductance (from envelope decay fits), device contributions (from active characterization), and coast overshoot (from thermal inertia measurement after device shutoff).
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) — How it works, design decisions, and why
-- [Configuration](docs/configuration.md) — Describing your setup
-- [Calibration](docs/calibration.md) — Teaching the system your space *(coming soon)*
-- [Drivers](docs/drivers.md) — Adding hardware support *(coming soon)*
+- [Architecture](docs/architecture.md) — Design principles, component details, data flow
+- [Configuration](docs/configuration.md) — Config file reference
+- [KASA Driver](docs/kasa_driver.md) — KASA hardware, firmware warnings, setup
+- [VeSync Driver](docs/vesync_driver.md) — VeSync humidifier setup, cloud limitations
+
+## Tests
+
+```bash
+python -m pytest tests/ -q
+```
+
+459 tests covering driver conformance, safety monitor scenarios, solver validation, physics model, calibration estimators, config loading, and structured logging.
 
 ## Project Status
 
-**Version 0.3** — Active development. Core daemon loop, solver, safety monitor, config loader, Govee BLE sensor driver, structured logging, and live display are implemented and tested. Calibration, KASA device driver, and remaining CLI commands are in progress.
-
-**300 tests passing** including driver conformance harness, safety monitor scenarios, solver validation, structured logging, and state directory resolution.
-
-Version history: 0.1 was a prototype. 0.2 was a threshold-based controller that worked but was limited. 0.3 is a ground-up rewrite as a physics-based solver.
+**Version 0.3** — Physics solver with calibrated device models, coast compensation, and graduated device support. Running in production on a seedling tent.
 
 ## License
 
-MIT License. See LICENSE file.
+MIT

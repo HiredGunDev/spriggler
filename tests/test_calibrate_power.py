@@ -20,12 +20,12 @@ from spriggler.calibrate.power import (
 class TestFindPowerDevices:
     """Tests for identifying devices with power monitoring."""
 
-    def test_kasa_strip_has_power(self):
-        """Devices with kasa_strip driver have power monitoring."""
+    def test_kasa_plug_has_power(self):
+        """Devices with kasa_plug driver have power monitoring."""
         config = {
             'devices': {
                 'heater': {
-                    'driver': 'kasa_strip',
+                    'driver': 'kasa_plug',
                     'driver_config': {'strip': 'S', 'plug': 'H'},
                     'environment': 'chamber',
                     'circuit': 'main',
@@ -45,7 +45,7 @@ class TestFindPowerDevices:
                     'environment': 'chamber',
                     'circuit': 'main',
                     'power_sensor': {
-                        'driver': 'kasa_strip',
+                        'driver': 'kasa_plug',
                         'driver_config': {'strip': 'S', 'plug': 'F'},
                     },
                 },
@@ -74,13 +74,13 @@ class TestFindPowerDevices:
         config = {
             'devices': {
                 'heater': {
-                    'driver': 'kasa_strip',
+                    'driver': 'kasa_plug',
                     'driver_config': {},
                     'environment': 'chamber',
                     'circuit': 'main',
                 },
                 'fan': {
-                    'driver': 'kasa_strip',
+                    'driver': 'kasa_plug',
                     'driver_config': {},
                     'environment': 'chamber',
                     'circuit': 'main',
@@ -96,7 +96,7 @@ class TestFindPowerDevices:
         config = {
             'devices': {
                 'heater': {
-                    'driver': 'kasa_strip',
+                    'driver': 'kasa_plug',
                     'driver_config': {},
                     'environment': 'chamber',
                     'circuit': 'main',

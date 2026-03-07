@@ -107,17 +107,31 @@ def predict(
 
         predicted[env_id] = env_predicted
 
-        # Apply coast overshoot for devices transitioning from ON to OFF
+        # Apply coast overshoot when device is currently in a non-off state.
+        #
+        # When a device is currently ON, the thermal mass is already
+        # loaded and coast overshoot will occur regardless of whether
+        # the proposal keeps it on or turns it off.  The difference
+        # between "keep on" and "turn off" is just one more cycle of
+        # the device's contribution (already handled above).
+        #
+        # Transition matrix:
+        #   OFF -> OFF : no coast (nothing stored)
+        #   OFF -> ON  : no coast (hasn't run long enough to load mass)
+        #   ON  -> OFF : add coast (thermal mass releases)
+        #   ON  -> ON  : add coast (mass is loaded; will release when
+        #               it eventually turns off, and the solver must
+        #               account for that to avoid a never-turn-off trap)
         if current_device_states and coast_data:
             for device_id, proposed in proposed_states.items():
                 if device_env_map.get(device_id) != env_id:
                     continue
 
                 current = current_device_states.get(device_id)
-                if current is None or current == 'off' or proposed != 'off':
+                if current is None or current == 'off':
                     continue
 
-                # Device is currently ON, proposal turns it OFF -- coast
+                # Device is currently ON -- coast applies to all proposals
                 dev_coast = coast_data.get(device_id, {})
                 for prop, coast_info in dev_coast.items():
                     overshoot = coast_info.get('overshoot', 0)

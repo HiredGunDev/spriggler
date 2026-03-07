@@ -147,10 +147,9 @@ def _find_power_monitored_devices(config: dict,
                                   device_filter: str | None) -> dict:
     """Find devices that have power_sensor configurations.
 
-    For now, any device controlled by a kasa_strip driver gets power
-    monitoring for free — the same strip outlet that controls the device
-    also reports power. Devices with explicit power_sensor blocks also
-    qualify.
+    A device has power monitoring if its primary driver is kasa_plug
+    (the same outlet controls and monitors), or if it has an explicit
+    power_sensor block (e.g., VeSync humidifier monitored by a KASA outlet).
 
     Returns:
         {device_id: device_config} for devices with power monitoring.
@@ -161,10 +160,10 @@ def _find_power_monitored_devices(config: dict,
             continue
 
         # Device has power if:
-        # 1. Its driver is kasa_strip (control and power on same outlet)
+        # 1. Its driver is kasa_plug (control and power on same outlet)
         # 2. It has an explicit power_sensor block
         has_power = (
-                dev_cfg.get('driver') == 'kasa_strip'
+                dev_cfg.get('driver') == 'kasa_plug'
                 or 'power_sensor' in dev_cfg
         )
         if has_power:
@@ -179,12 +178,24 @@ def _calibrate_device_power(dev_id: str, dev_cfg: dict, config: dict,
     """Calibrate power for a single device.
 
     Returns dict with measured power per state.
+
+    When the device has a separate power_sensor (e.g., VeSync humidifier
+    plugged into a KASA outlet for monitoring), power is read from the
+    power sensor rather than the device driver.
     """
     from spriggler.devices.registry import get_device_driver
 
-    # Instantiate the device driver
+    # Instantiate the device driver (for control)
     driver_cls = get_device_driver(dev_cfg['driver'])
     driver = driver_cls(dev_cfg['driver_config'])
+
+    # Instantiate power reader — either the device itself or a
+    # separate power_sensor (e.g., KASA outlet monitoring a VeSync device)
+    power_reader = driver
+    if 'power_sensor' in dev_cfg:
+        ps_cfg = dev_cfg['power_sensor']
+        ps_cls = get_device_driver(ps_cfg['driver'])
+        power_reader = ps_cls(ps_cfg['driver_config'])
 
     states = driver.get_available_states()
     print(f"  States: {states}")
@@ -197,7 +208,7 @@ def _calibrate_device_power(dev_id: str, dev_cfg: dict, config: dict,
             print(f"  Measuring standby (off)...")
             driver.set_state('off')
             time.sleep(settle)
-            readings = _take_power_samples(driver, samples, interval)
+            readings = _take_power_samples(power_reader, samples, interval)
             state_results['off'] = _summarize_samples(readings)
             print(f"    Standby: {state_results['off']['watts_mean']:.1f}W")
         else:
@@ -206,7 +217,7 @@ def _calibrate_device_power(dev_id: str, dev_cfg: dict, config: dict,
             print(f"    Settling for {settle}s...")
             time.sleep(settle)
 
-            readings = _take_power_samples(driver, samples, interval)
+            readings = _take_power_samples(power_reader, samples, interval)
             state_results[state] = _summarize_samples(readings)
 
             watts = state_results[state]['watts_mean']
