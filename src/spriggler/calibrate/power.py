@@ -194,7 +194,8 @@ def _calibrate_device_power(dev_id: str, dev_cfg: dict, config: dict,
     power_reader = driver
     if 'power_sensor' in dev_cfg:
         ps_cfg = dev_cfg['power_sensor']
-        ps_cls = get_device_driver(ps_cfg['driver'])
+        from spriggler.devices.power_registry import get_power_sensor_driver
+        ps_cls = get_power_sensor_driver(ps_cfg['driver'])
         power_reader = ps_cls(ps_cfg['driver_config'])
 
     states = driver.get_available_states()
@@ -242,11 +243,24 @@ def _take_power_samples(driver, count: int,
                         interval: float) -> list[dict]:
     """Take multiple power readings from a device driver.
 
+    Supports both power sensor interface (read_power) and
+    device driver interface (get_power).
+
     Returns list of dicts with watts (and optionally volts, amps).
     """
+    # Determine which method to call
+    if hasattr(driver, 'read_power'):
+        read_fn = driver.read_power
+    elif hasattr(driver, 'get_power'):
+        read_fn = driver.get_power
+    else:
+        raise AttributeError(
+            f"{type(driver).__name__} has neither "
+            f"read_power() nor get_power()")
+
     readings = []
     for i in range(count):
-        watts = driver.get_power()
+        watts = read_fn()
         reading = {'watts': watts if watts is not None else 0.0}
         readings.append(reading)
         if i < count - 1:

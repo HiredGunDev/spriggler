@@ -124,16 +124,20 @@ def run_calibrate_all(home: Path, args) -> None:
         print("  Power calibration failed. Continuing...",
               file=sys.stderr)
 
-    # ── Sort energy devices by power draw (highest first) ────────────
+    # ── Sort energy devices by power draw (lowest first) ──────────
+    # Low-power devices first so their small signals aren't drowned
+    # by residual heat from high-power devices.  The highest-power
+    # device (heater) goes last, which also produces the best envelope
+    # decay fit (largest differential) and leaves the environment hot
+    # for transfer device characterization.
     power_data = _load_power_data(home)
 
     def power_sort_key(dev_id):
-        """Higher power = lower sort key (comes first)."""
+        """Lower power = lower sort key (comes first)."""
         watts = power_data.get(dev_id, 0)
-        return -watts
+        return watts
 
     energy_devices.sort(key=power_sort_key)
-    # Unknown devices go after known energy, before transfer
     unknown_devices.sort(key=power_sort_key)
 
     all_energy = energy_devices + unknown_devices

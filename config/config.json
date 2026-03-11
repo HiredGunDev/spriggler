@@ -4,7 +4,6 @@
   "units": {
     "temperature": "F"
   },
-
   "environments": {
     "seedling": {
       "description": "Seedling tent",
@@ -16,12 +15,14 @@
       }
     }
   },
-
   "sensors": {
     "seedling_sensor": {
       "driver": "govee_ble",
       "environment": "seedling",
-      "properties": ["temperature", "humidity"],
+      "properties": [
+        "temperature",
+        "humidity"
+      ],
       "poll_interval_seconds": 60,
       "driver_config": {
         "address": "2650"
@@ -30,14 +31,16 @@
     "ambient_sensor": {
       "driver": "govee_ble",
       "environment": "ambient",
-      "properties": ["temperature", "humidity"],
+      "properties": [
+        "temperature",
+        "humidity"
+      ],
       "poll_interval_seconds": 120,
       "driver_config": {
         "address": "627A"
       }
     }
   },
-
   "devices": {
     "seedling_heater": {
       "driver": "kasa_plug",
@@ -49,7 +52,7 @@
         "plug": "Heater"
       },
       "power_sensor": {
-        "driver": "kasa_plug",
+        "driver": "kasa_strip",
         "driver_config": {
           "strip": "seedling",
           "plug": "Heater"
@@ -66,7 +69,7 @@
         "plug": "Lights"
       },
       "power_sensor": {
-        "driver": "kasa_plug",
+        "driver": "kasa_strip",
         "driver_config": {
           "strip": "seedling",
           "plug": "Lights"
@@ -83,7 +86,7 @@
         "plug": "Fan"
       },
       "power_sensor": {
-        "driver": "kasa_plug",
+        "driver": "kasa_strip",
         "driver_config": {
           "strip": "seedling",
           "plug": "Fan"
@@ -101,7 +104,7 @@
         "password": "VEEnterpriseNX01"
       },
       "power_sensor": {
-        "driver": "kasa_plug",
+        "driver": "kasa_strip",
         "driver_config": {
           "strip": "seedling",
           "plug": "Humidifier"
@@ -109,7 +112,6 @@
       }
     }
   },
-
   "circuits": {
     "seedling_circuit": {
       "max_amps": 15,
@@ -117,7 +119,6 @@
       "description": "Seedling strip circuit"
     }
   },
-
   "schedules": {
     "seedling": {
       "phases": [
@@ -126,8 +127,16 @@
           "start": "06:00",
           "end": "22:00",
           "targets": {
-            "temperature": { "min": 72, "max": 80, "ideal": 76 },
-            "humidity": { "min": 60, "max": 80, "ideal": 70 }
+            "temperature": {
+              "min": 72,
+              "max": 80,
+              "ideal": 76
+            },
+            "humidity": {
+              "min": 60,
+              "max": 80,
+              "ideal": 70
+            }
           },
           "devices": {
             "seedling_light": "on"
@@ -138,8 +147,16 @@
           "start": "22:00",
           "end": "06:00",
           "targets": {
-            "temperature": { "min": 65, "max": 75, "ideal": 70 },
-            "humidity": { "min": 60, "max": 80, "ideal": 70 }
+            "temperature": {
+              "min": 65,
+              "max": 75,
+              "ideal": 70
+            },
+            "humidity": {
+              "min": 60,
+              "max": 80,
+              "ideal": 70
+            }
           },
           "devices": {
             "seedling_light": "off"
@@ -148,16 +165,23 @@
       ]
     }
   },
-
   "safety": {
     "environments": {
       "seedling": {
         "limits": {
-          "temperature": { "absolute_min": 50, "absolute_max": 95 },
-          "humidity": { "absolute_min": 20, "absolute_max": 95 }
+          "temperature": {
+            "absolute_min": 50,
+            "absolute_max": 95
+          },
+          "humidity": {
+            "absolute_min": 20,
+            "absolute_max": 95
+          }
         },
         "rate_of_change": {
-          "temperature": { "max_per_minute": 2.0 }
+          "temperature": {
+            "max_per_minute": 2.0
+          }
         }
       }
     },

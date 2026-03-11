@@ -112,6 +112,12 @@ class GoveeSensor(SensorDriver):
 
         Readings are populated by the background scanner callback.
         This method just returns the cache — it never blocks on BLE.
+
+        The returned dict includes '_sample_time': the wall-clock
+        time (time.time()) when the BLE advertisement was received.
+        This is NOT when read() was called — it's when the sensor
+        actually reported data.  Consumers use this to assess
+        freshness and gate decisions on real data arrival.
         """
         with self._reading_lock:
             if self._last_reading is None:
@@ -123,7 +129,9 @@ class GoveeSensor(SensorDriver):
                           self._address, age, self._scan_timeout)
                 return None
 
-            return dict(self._last_reading)
+            result = dict(self._last_reading)
+            result['_sample_time'] = self._last_reading_time
+            return result
 
     def validate_config(self, driver_config: dict) -> None:
         if 'address' not in driver_config:

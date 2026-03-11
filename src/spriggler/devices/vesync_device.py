@@ -41,6 +41,7 @@ Note on cloud control:
 
 import logging
 import os
+import time
 
 from spriggler.devices.base import DeviceDriver, DeviceCommandError
 from spriggler.devices.vesync import get_vesync_manager, VeSyncError
@@ -110,6 +111,16 @@ class VeSyncHumidifier(DeviceDriver):
         return list(self._states)
 
     def set_state(self, state: str) -> bool:
+        """Set device state — fire and forget.
+
+        Sends the command to the cloud and optimistically updates
+        local state.  Does NOT block waiting for confirmation.
+        The daemon will see the actual effect in sensor readings
+        next cycle and re-plan accordingly.
+
+        Returns True if the command was sent (not necessarily received).
+        Returns False if the command could not be sent at all.
+        """
         available = self.get_available_states()
         if state not in available:
             raise ValueError(
@@ -117,31 +128,61 @@ class VeSyncHumidifier(DeviceDriver):
                 f"Available: {available}"
             )
         if state == 'off':
-            return self.turn_off()
+            return self._send_off()
         else:
-            return self._set_mist(state)
+            return self._send_mist(state)
 
-    def get_current_state(self) -> str:
+    def _send_off(self) -> bool:
+        """Send turn-off command, don't wait for confirmation."""
+        try:
+            self._ensure_device()
+            self._mgr.turn_off_device(self._device)
+            self._last_known_state = 'off'
+            return True
+        except (VeSyncError, DeviceCommandError) as e:
+            log.error("VeSync turn_off failed for %s: %s",
+                      self._device_name, e)
+            return False
+
+    def _send_mist(self, state: str) -> bool:
+        """Send mist-level command, don't wait for confirmation."""
+        level = self._state_levels.get(state)
+        if level is None:
+            raise ValueError(f"Unknown state: {state}")
+        try:
+            self._ensure_device()
+            self._mgr.turn_on_device(self._device)
+            self._mgr.set_mist_level(self._device, level)
+            self._last_known_state = state
+            return True
+        except (VeSyncError, DeviceCommandError) as e:
+            log.error("VeSync set_mist failed for %s "
+                      "(state=%s, level=%d): %s",
+                      self._device_name, state, level, e)
+            return False
+
+    def _query_state_once(self) -> str:
+        """Query device state from cloud (single call, rate-limited)."""
         try:
             self._ensure_device()
             self._mgr.update_device(self._device)
-
             if not self._device.is_on:
-                self._last_known_state = 'off'
                 return 'off'
-
-            level = self._mgr.get_mist_level(self._device)
+            try:
+                level = self._device.state.mist_virtual_level or 0
+            except AttributeError:
+                level = 0
             if level == 0:
-                self._last_known_state = 'off'
                 return 'off'
-
-            # Find the closest matching state
-            state = self._closest_state(level)
-            self._last_known_state = state
-            return state
-
-        except (VeSyncError, DeviceCommandError):
+            return self._closest_state(level)
+        except (VeSyncError, DeviceCommandError, AttributeError):
             return self._last_known_state
+
+    def get_current_state(self) -> str:
+        """Get current state (single cloud query)."""
+        state = self._query_state_once()
+        self._last_known_state = state
+        return state
 
     def _closest_state(self, level: int) -> str:
         """Map an arbitrary mist level to the nearest defined state."""
@@ -160,44 +201,13 @@ class VeSyncHumidifier(DeviceDriver):
 
     def turn_on(self) -> bool:
         """Turn on at highest mist level."""
-        return self._set_mist(self._states[-1])
+        return self._send_mist(self._states[-1])
 
     def turn_off(self) -> bool:
-        try:
-            self._ensure_device()
-            result = self._mgr.turn_off_device(self._device)
-            if result:
-                self._last_known_state = 'off'
-            return result
-        except (VeSyncError, DeviceCommandError) as e:
-            log.error("VeSync turn_off failed for %s: %s",
-                      self._device_name, e)
-            return False
-
-    def _set_mist(self, state: str) -> bool:
-        """Turn on and set mist to the level for the given state."""
-        level = self._state_levels.get(state)
-        if level is None:
-            raise ValueError(f"Unknown state: {state}")
-        try:
-            self._ensure_device()
-            # Ensure device is on first
-            self._mgr.turn_on_device(self._device)
-            result = self._mgr.set_mist_level(self._device, level)
-            if result:
-                self._last_known_state = state
-            return result
-        except (VeSyncError, DeviceCommandError) as e:
-            log.error("VeSync set_mist failed for %s (state=%s, level=%d): %s",
-                      self._device_name, state, level, e)
-            return False
+        return self._send_off()
 
     def is_on(self) -> bool:
-        try:
-            self._ensure_device()
-            return self._mgr.is_device_on(self._device)
-        except (VeSyncError, DeviceCommandError):
-            return self._last_known_state != 'off'
+        return self.get_current_state() != 'off'
 
     def get_power(self) -> float | None:
         # VeSync humidifiers don't report power consumption

@@ -7,6 +7,7 @@ and integration tests.
 
 import random
 import re
+import time
 
 from spriggler.sensors.base import SensorDriver
 
@@ -46,6 +47,7 @@ class MockSensor(SensorDriver):
             "humidity": round(self._humidity, 1),
             "battery": self._battery,
             "signal_strength": self._rssi,
+            "_sample_time": time.time(),
         }
 
     def validate_config(self, driver_config: dict) -> None:
@@ -58,4 +60,3 @@ class MockSensor(SensorDriver):
     @property
     def driver_name(self) -> str:
         return "mock"
-    

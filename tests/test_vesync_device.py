@@ -154,12 +154,14 @@ class TestGetCurrentState:
         """With default {low: 1, high: 2}, level 2 maps to high."""
         driver._device.device_status = 'on'
         driver._device._mist_level = 2
+        type(driver._device).state.mist_virtual_level = 2
         assert driver.get_current_state() == 'high'
 
     def test_closest_state_mid(self, graduated_driver):
         """With 3 states, level 5 maps to mid."""
         graduated_driver._device.device_status = 'on'
         graduated_driver._device._mist_level = 5
+        type(graduated_driver._device).state.mist_virtual_level = 5
         assert graduated_driver.get_current_state() == 'mid'
 
 

@@ -40,6 +40,7 @@ from spriggler.physics.model import make_solver_predict_fn
 from spriggler.safety.monitor import SafetyMonitor
 from spriggler.schedule import resolve_all_targets, resolve_all_device_overrides
 from spriggler.solver.solver import Solver
+from spriggler.solver.threshold import ThresholdController
 from spriggler.units import format_temp
 
 
@@ -78,6 +79,7 @@ class Daemon:
         # Core components
         self._safety = SafetyMonitor(config)
         self._solver = Solver(config)
+        self._controller = ThresholdController(config)
 
         # Cycle timing — needed by _load_calibration for rate conversion
         self._cycle_seconds = config.get('safety', {}).get(
@@ -88,12 +90,25 @@ class Daemon:
         # otherwise falls back to role-based estimates.
         self._calibration = self._load_calibration()
 
-        # Coast data — loaded from device calibration files.
+        # Coast data — legacy summary for old solver
         # {device_id: {property: {overshoot: float, duration: float}}}
         self._coast_data = self._load_coast_data()
 
+        # Coast profiles — full time series for trajectory planner
+        # {device_id: {state: {property: [{elapsed_s, value}]}}}
+        self._coast_profiles = self._load_coast_profiles()
+
         # Manual override tracking: {device_id: expiry_timestamp}
         self._manual_overrides = {}
+
+        # Sensor-based device verification
+        # {device_id: {state, command_time, baseline_value}}
+        self._pending_verifications = {}
+        # Per-environment last BLE sample time
+        # {env_id: float (wall clock time of last fresh BLE reading)}
+        self._last_sample_times = {}
+        # Timeout for sensor verification (no fresh data = sensor offline)
+        self._sensor_verification_timeout = 120.0
 
         # Last commanded state per device (for override detection)
         self._last_commanded = {dev_id: 'off' for dev_id in self._devices}
@@ -178,8 +193,11 @@ class Daemon:
             # Defaults for missing envelope properties
             if 'temperature' not in cal[env_id]['envelope']:
                 cal[env_id]['envelope']['temperature'] = 0.005 * dt
-            if 'humidity' not in cal[env_id]['envelope']:
-                cal[env_id]['envelope']['humidity'] = 0.002 * dt
+            # No default for humidity — sealed environments don't
+            # exchange moisture through walls.  Humidity only moves
+            # via fan (air exchange) or humidifier/dehumidifier.
+            # A spurious humidity envelope causes the solver to
+            # predict phantom humidity drift toward ambient.
 
             # ── Device effects ──
             for dev_id, dev_cfg in self._config['devices'].items():
@@ -317,6 +335,7 @@ class Daemon:
             }
             self._safety = SafetyMonitor(new_config)
             self._solver = Solver(new_config)
+            self._controller = ThresholdController(new_config)
             self._cycle_seconds = new_config.get('safety', {}).get(
                 'safety_loop_interval_seconds', 60
             )
@@ -357,22 +376,49 @@ class Daemon:
             )
 
             if env_id == 'ambient':
-                ambient.update(reading)
+                ambient.update(
+                    {k: v for k, v in reading.items()
+                     if not k.startswith('_')})
+                sample_t = reading.get('_sample_time')
+                if sample_t:
+                    self._last_sample_times['ambient'] = sample_t
                 self._slog.emit('sensor.reading', cycle=cycle,
                                 sensor_id=sensor_id,
                                 environment='ambient',
-                                **reading)
+                                **{k: v for k, v in reading.items()
+                                   if not k.startswith('_')})
             else:
                 if env_id not in readings:
                     readings[env_id] = {}
-                readings[env_id].update(reading)
+                readings[env_id].update(
+                    {k: v for k, v in reading.items()
+                     if not k.startswith('_')})
+                sample_t = reading.get('_sample_time')
+                if sample_t:
+                    self._last_sample_times[env_id] = sample_t
                 self._slog.emit('sensor.reading', cycle=cycle,
                                 sensor_id=sensor_id,
                                 environment=env_id,
-                                **reading)
+                                **{k: v for k, v in reading.items()
+                                   if not k.startswith('_')})
 
         self._last_readings = readings
         self._last_ambient = ambient
+
+        # ── 1b. Check sensor freshness ───────────────────────────────────
+        now_ts = time.time()
+        for sensor_id, sensor_info in self._sensors.items():
+            env_id = sensor_info['environment']
+            sample_t = self._last_sample_times.get(env_id, 0)
+            if sample_t > 0:
+                age = now_ts - sample_t
+                if age > 45:  # BLE should arrive every ~30s
+                    self._slog.emit('sensor.stale', cycle=cycle,
+                                    sensor_id=sensor_id,
+                                    environment=env_id,
+                                    age_s=round(age, 1))
+                    log.warning("Stale BLE: %s (%s) last fresh %.0fs ago",
+                                sensor_id, env_id, age)
 
         # ── 2. Safety monitor evaluate ───────────────────────────────────
         commands, alerts = self._safety.evaluate(now.timestamp())
@@ -419,29 +465,12 @@ class Daemon:
 
         # Add manual overrides to schedule overrides
         for dev_id in self._manual_overrides:
-            driver = self._devices[dev_id]['driver']
-            overrides[dev_id] = driver.get_current_state()
+            overrides[dev_id] = self._last_commanded.get(dev_id, 'off')
 
-        # ── 5. Build physics predict_fn ──────────────────────────────────
-        # Current device states for coast prediction
-        current_states = {}
-        for dev_id, info in self._devices.items():
-            current_states[dev_id] = info['driver'].get_current_state()
+        # ── 5. Get current device states ────────────────────────────────
+        current_states = dict(self._last_commanded)
 
-        predict_fn = make_solver_predict_fn(
-            ambient=ambient,
-            calibration=self._calibration,
-            device_env_map=self._device_env_map,
-            current_device_states=current_states,
-            coast_data=self._coast_data,
-        )
-
-        # ── 6. Solve ─────────────────────────────────────────────────────
-        device_states_available = {
-            dev_id: info['driver'].get_available_states()
-            for dev_id, info in self._devices.items()
-        }
-
+        # ── 6. Threshold controller ──────────────────────────────────────
         locked_out = {
             dev_id for dev_id in self._devices
             if self._safety.is_device_locked_out(dev_id)
@@ -449,27 +478,27 @@ class Daemon:
 
         device_amps = self._estimate_device_amps()
 
-        result = self._solver.solve(
-            current_readings=readings,
-            device_states_available=device_states_available,
-            locked_out_devices=locked_out,
+        result = self._controller.decide(
+            readings=readings,
+            ambient=ambient,
+            targets=targets,
+            calibration=self._calibration,
+            device_env_map=self._device_env_map,
+            current_device_states=current_states,
             schedule_overrides=overrides,
-            predict_fn=predict_fn,
-            current_phase_targets=targets,
+            locked_out_devices=locked_out,
+            coast_data=self._coast_data,
             device_amps=device_amps,
+            cycle_seconds=self._cycle_seconds,
         )
         self._last_solver_result = result
 
-        self._slog.emit('solver.result', cycle=cycle,
-                        feasible=result.feasible_count,
-                        total=result.total_count,
-                        cost=round(result.total_cost, 4),
+        self._slog.emit('controller.result', cycle=cycle,
                         device_states=result.device_states)
 
         # ── 7. Execute device commands ───────────────────────────────────
         for dev_id, state in result.device_states.items():
-            driver = self._devices[dev_id]['driver']
-            current = driver.get_current_state()
+            current = self._last_commanded.get(dev_id, 'off')
             if state != current:
                 self._execute_device_state(dev_id, state)
                 self._slog.emit('device.command', cycle=cycle,
@@ -477,8 +506,9 @@ class Daemon:
                                 old_state=current,
                                 new_state=state)
 
-        # ── 8. Detect manual overrides ───────────────────────────────────
-        self._check_manual_overrides(cycle, now_ts)
+        # ── 8. Verify device responses via sensor physics ──────────────
+        now_ts = time.time()
+        self._check_device_verification(cycle, now_ts)
 
         # ── 9. Log power and environment summary ─────────────────────────
         for dev_id, info in self._devices.items():
@@ -500,38 +530,124 @@ class Daemon:
                                 target_max=target.get('max'),
                                 target_ideal=target.get('ideal'))
 
-    # ── Manual override detection ────────────────────────────────────────
+    # ── Sensor-based device verification ───────────────────────────────
 
-    def _check_manual_overrides(self, cycle: int, now_ts: float) -> None:
-        """Check if any device state differs from what was commanded."""
-        for dev_id, info in self._devices.items():
-            if dev_id in self._manual_overrides:
+    # Minimum seconds between retry attempts for unresponsive devices
+    DEVICE_RETRY_INTERVAL = 300  # 5 minutes
+
+    def _check_device_verification(self, cycle: int, now_ts: float) -> None:
+        """Verify devices are responding using sensor physics.
+
+        Verification stays pending indefinitely until the sensor
+        confirms the expected effect.  If the device isn't responding,
+        the command is re-sent at a patient interval (5 minutes).
+        As long as the daemon runs and the planner wants this device
+        on, we keep trying.
+        """
+        from spriggler.calibrate.precondition import ROLE_EFFECTS
+
+        for dev_id, pending in list(self._pending_verifications.items()):
+            cmd_state = pending['state']
+            cmd_time = pending['command_time']
+            last_retry = pending.get('last_retry_time', cmd_time)
+            env_id = self._devices[dev_id]['environment']
+            role = self._devices[dev_id]['role']
+
+            # Don't verify 'off' commands
+            if cmd_state == 'off':
+                del self._pending_verifications[dev_id]
                 continue
 
-            driver = info['driver']
-            actual = driver.get_current_state()
-            commanded = self._last_commanded.get(dev_id, 'off')
-
-            if actual == commanded:
+            # If planner changed its mind, clear this verification.
+            # A new one will be created for the new command.
+            if self._last_commanded.get(dev_id) != cmd_state:
+                del self._pending_verifications[dev_id]
                 continue
 
-            dev_cfg = self._config['devices'].get(dev_id, {})
-            override_minutes = dev_cfg.get('manual_override_minutes', 0)
+            effect = ROLE_EFFECTS.get(role)
+            if not effect:
+                del self._pending_verifications[dev_id]
+                continue
 
-            if override_minutes > 0:
-                expiry = now_ts + (override_minutes * 60)
-                self._manual_overrides[dev_id] = expiry
-                self._slog.emit('override.detected', cycle=cycle,
-                                device_id=dev_id,
-                                actual_state=actual,
-                                commanded_state=commanded,
-                                hold_minutes=override_minutes)
+            primary_prop, direction = effect
+
+            # Need a sensor reading with _sample_time > cmd_time
+            env_readings = self._last_readings.get(env_id, {})
+            sample_time = self._last_sample_times.get(env_id, 0)
+
+            if sample_time <= cmd_time:
+                # No fresh sensor data since the command.
+                if now_ts - cmd_time > self._sensor_verification_timeout:
+                    log.warning(
+                        "No fresh sensor data for %s within %.0fs "
+                        "of commanding %s=%s. Sensor may be offline.",
+                        env_id,
+                        self._sensor_verification_timeout,
+                        dev_id, cmd_state)
+                    # Keep checking — sensor may come back.
+                continue
+
+            current_val = env_readings.get(primary_prop)
+            baseline_val = pending.get('baseline_value')
+
+            if current_val is None or baseline_val is None:
+                del self._pending_verifications[dev_id]
+                continue
+
+            elapsed_since_cmd = sample_time - cmd_time
+            elapsed_since_retry = now_ts - last_retry
+
+            actual_delta = current_val - baseline_val
+            if direction == 'increase':
+                responding = actual_delta > 0
             else:
-                self._slog.emit('override.mismatch', cycle=cycle,
-                                device_id=dev_id,
-                                actual_state=actual,
-                                commanded_state=commanded)
-                self._execute_device_state(dev_id, commanded)
+                responding = actual_delta < 0
+
+            # Grace period: at least 60s before evaluating
+            if elapsed_since_cmd < 60.0:
+                continue
+
+            # Skip verification for devices whose expected effect
+            # is smaller than sensor resolution (~0.1K / 0.2%RH).
+            # The light adds 0.02K/cycle — we can't verify that
+            # from BLE data. Trust the command.
+            env_cal = self._calibration.get(env_id, {})
+            dev_cal = env_cal.get('devices', {}).get(dev_id, {})
+            state_effects = dev_cal.get(cmd_state, {})
+            expected_rate = abs(state_effects.get(primary_prop, 0))
+            expected_after_60s = expected_rate * (60.0 / self._cycle_seconds)
+            if expected_after_60s < 0.15:
+                # Effect too small to verify via sensor
+                del self._pending_verifications[dev_id]
+                continue
+
+            if responding:
+                # Device confirmed working. Clear verification.
+                del self._pending_verifications[dev_id]
+            else:
+                # Not responding. Retry at patient interval.
+                if elapsed_since_retry >= self.DEVICE_RETRY_INTERVAL:
+                    log.warning(
+                        "Device %s still not responding to '%s' "
+                        "(%.0fs since command, expected %s, "
+                        "actual delta=%.3f). Retrying.",
+                        dev_id, cmd_state,
+                        elapsed_since_cmd, direction,
+                        actual_delta)
+                    self._slog.emit(
+                        'device.retry', cycle=cycle,
+                        device_id=dev_id,
+                        commanded_state=cmd_state,
+                        elapsed_s=round(elapsed_since_cmd, 1),
+                        actual_delta=round(actual_delta, 4))
+
+                    # Re-send via driver directly (don't use
+                    # _execute_device_state which resets pending)
+                    driver = self._devices[dev_id]['driver']
+                    driver.set_state(cmd_state)
+                    pending['last_retry_time'] = now_ts
+                    # Update baseline to detect movement from retry
+                    pending['baseline_value'] = current_val
 
     # ── Device execution ─────────────────────────────────────────────────
 
@@ -551,11 +667,34 @@ class Daemon:
     def _execute_device_state(self, device_id: str, state: str) -> None:
         """Set a device to a specific state and report to safety monitor."""
         driver = self._devices[device_id]['driver']
+        cmd_time = time.time()
         driver.set_state(state)
         self._last_commanded[device_id] = state
         self._safety.report_device_command(
-            device_id, state != 'off', time.time()
+            device_id, state != 'off', cmd_time
         )
+
+        # Record pending verification for non-off commands.
+        # Store the current sensor value as baseline so we can
+        # detect whether the environment moves in the expected
+        # direction after the command.
+        if state != 'off':
+            env_id = self._devices[device_id]['environment']
+            role = self._devices[device_id]['role']
+            from spriggler.calibrate.precondition import ROLE_EFFECTS
+            effect = ROLE_EFFECTS.get(role)
+            if effect:
+                primary_prop, _ = effect
+                baseline = self._last_readings.get(
+                    env_id, {}).get(primary_prop)
+                self._pending_verifications[device_id] = {
+                    'state': state,
+                    'command_time': cmd_time,
+                    'baseline_value': baseline,
+                }
+        else:
+            # Device turned off — no verification needed
+            self._pending_verifications.pop(device_id, None)
 
     # ── Status output ────────────────────────────────────────────────────
 
@@ -578,7 +717,7 @@ class Daemon:
             dev_state = self._safety.get_device_state(dev_id)
 
             dev_status = {
-                'state': driver.get_current_state(),
+                'state': self._last_commanded.get(dev_id, 'off'),
                 'power_watts': power,
                 'locked_out': self._safety.is_device_locked_out(dev_id),
                 'manual_override': dev_id in self._manual_overrides,
@@ -608,6 +747,8 @@ class Daemon:
                 'last_cost': round(r.total_cost, 4),
                 'feasible_combinations': r.feasible_count,
                 'total_combinations': r.total_count,
+                'horizon_steps': getattr(r, 'horizon_steps', None),
+                'horizon_seconds': getattr(r, 'horizon_seconds', None),
             }
 
         status = {
@@ -632,6 +773,25 @@ class Daemon:
         os.replace(tmp_path, self._status_path)
 
     # ── Helpers ──────────────────────────────────────────────────────────
+
+    def _get_power_watts(self) -> dict[str, dict[str, float]]:
+        """Get power consumption in watts per device per state.
+
+        Used by the trajectory planner's energy penalty to prefer
+        efficient device choices.
+        """
+        power_cal = self._load_power_calibration()
+        watts = {}
+        for dev_id in self._devices:
+            dev_watts = {}
+            states_data = (power_cal.get(dev_id, {})
+                           .get('states', {}))
+            for state, state_data in states_data.items():
+                w = state_data.get('watts_mean', 0.0)
+                dev_watts[state] = w
+            if dev_watts:
+                watts[dev_id] = dev_watts
+        return watts
 
     def _estimate_device_amps(self) -> dict[str, dict[str, float]]:
         """Estimate amps per device per state.
@@ -732,6 +892,38 @@ class Daemon:
                 log.warning("Failed to load coast data for %s: %s", dev_id, e)
 
         return coast
+
+    def _load_coast_profiles(self) -> dict:
+        """Load coast profile time series from device calibration files.
+
+        Reads calibration/{device_id}.json for each device and extracts
+        the 'coast_profile' section if present.
+
+        Returns:
+            {device_id: {state: {property: [{elapsed_s, value}]}}}
+        """
+        profiles = {}
+        cal_dir = self._home / 'calibration'
+        if not cal_dir.is_dir():
+            return profiles
+
+        for dev_id in self._devices:
+            cal_file = cal_dir / f'{dev_id}.json'
+            if not cal_file.is_file():
+                continue
+            try:
+                data = json.loads(cal_file.read_text())
+                dev_profiles = data.get('coast_profile', {})
+                if dev_profiles:
+                    profiles[dev_id] = dev_profiles
+                    states = list(dev_profiles.keys())
+                    log.info("Loaded coast profiles for %s: states=%s",
+                             dev_id, states)
+            except (json.JSONDecodeError, KeyError) as e:
+                log.warning("Failed to load coast profiles for %s: %s",
+                            dev_id, e)
+
+        return profiles
 
 
 def main():
