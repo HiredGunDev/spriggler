@@ -1,35 +1,32 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "spriggler"
-version = "0.3.0"
-description = "Physics-based environmental control daemon"
+version = "0.5.0-dev"
+description = "Physics-informed environmental controller for grow environments, aquaculture, brewing, and more"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.10"
-dependencies = [
-    "bleak>=0.21.0",
-    "govee-ble>=1.0.0",
-    "psychrolib>=2.5.0",
-    "python-kasa>=0.6.0",
+requires-python = ">=3.11"
+authors = [
+    {name = "William Maness"},
 ]
-
-[project.scripts]
-spriggler-daemon = "spriggler.daemon:main"
-spriggler = "spriggler.cli:main"
+dependencies = [
+    "click>=8.1",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.0",
-]
+ble = ["bleak>=0.21"]
+kasa = ["python-kasa>=0.6"]
+vesync = ["pyvesync>=2.1"]
+all = ["spriggler[ble,kasa,vesync]"]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21"]
+
+[project.scripts]
+spriggler = "spriggler.cli.main:cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-asyncio_mode = "auto"

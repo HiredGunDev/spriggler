@@ -1,3 +1,3 @@
-"""Spriggler - Physics-based environmental control daemon."""
+"""Spriggler — physics-informed environmental controller."""
 
-__version__ = "0.3.0"
+__version__ = "0.5.0-dev"
