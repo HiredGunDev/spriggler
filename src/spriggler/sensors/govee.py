@@ -292,12 +292,22 @@ class GoveeSensor(SensorDriver):
         asyncio.set_event_loop(cls._loop)
         try:
             cls._loop.run_until_complete(cls._scan_loop())
+        except RuntimeError as e:
+            # "Event loop stopped before Future completed" is normal
+            # during shutdown — stop_scanner() stops the loop while
+            # scan_loop is sleeping.
+            if "stopped before" in str(e):
+                pass
+            else:
+                log.exception("BLE scanner thread crashed")
         except Exception:
             log.exception("BLE scanner thread crashed")
         finally:
             cls._running = False
-            cls._loop.close()
-            log.warning("BLE scanner thread exited")
+            try:
+                cls._loop.close()
+            except Exception:
+                pass
 
     @classmethod
     async def _scan_loop(cls) -> None:
