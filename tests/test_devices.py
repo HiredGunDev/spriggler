@@ -84,5 +84,11 @@ class TestDeviceRegistry:
     def test_kasa_registered_via_discovery(self):
         """KASA driver registers itself when discovered."""
         from spriggler.util.discovery import discover_plugins
-        discover_plugins(package="spriggler.devices", exclude={"kasa_mgr"})
+        discover_plugins(package="spriggler.devices", exclude={"kasa_mgr", "vesync_mgr"})
         assert driver_registry.has_driver("kasa_plug")
+
+    def test_vesync_registered_via_discovery(self):
+        """VeSync driver registers itself when discovered."""
+        from spriggler.util.discovery import discover_plugins
+        discover_plugins(package="spriggler.devices", exclude={"kasa_mgr", "vesync_mgr"})
+        assert driver_registry.has_driver("vesync_humidifier")

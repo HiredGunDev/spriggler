@@ -47,6 +47,20 @@ def _load_config(ctx):
         return None, str(e)
 
 
+def _get_vesync_credentials(cfg) -> dict | None:
+    """Extract VeSync credentials from config if available."""
+    if cfg is None:
+        return None
+    for dev in cfg.get("devices", {}).values():
+        if dev.get("driver") == "vesync_humidifier":
+            dc = dev.get("driver_config", {})
+            email = dc.get("email")
+            password = dc.get("password")
+            if email and password:
+                return {"email": email, "password": password}
+    return None
+
+
 @device.command("scan")
 @click.option(
     "--timeout", "-t",
@@ -160,6 +174,55 @@ def device_scan(ctx, timeout):
 
     console.print(t)
 
+    # ── VeSync discovery ─────────────────────────────────────
+    # Try to discover VeSync devices if credentials are available
+    cfg, _ = _load_config(ctx)
+    vesync_creds = _get_vesync_credentials(cfg)
+    if vesync_creds:
+        try:
+            from spriggler.devices.vesync_mgr import get_vesync_manager
+            vmgr = get_vesync_manager(**vesync_creds)
+            humidifiers = vmgr.list_humidifiers()
+
+            if humidifiers:
+                vt = Table(
+                    title="VeSync Devices",
+                    box=box.ROUNDED,
+                    title_style=f"bold {C_BRAND}",
+                    header_style="bold",
+                )
+                vt.add_column("Name", style=C_CMD)
+                vt.add_column("Type")
+                vt.add_column("State")
+                vt.add_column("Configured")
+
+                # Check which VeSync devices are configured
+                configured_vesync = set()
+                if cfg:
+                    for dev in cfg.get("devices", {}).values():
+                        if dev.get("driver") == "vesync_humidifier":
+                            dc = dev.get("driver_config", {})
+                            vname = dc.get("name", "")
+                            if vname:
+                                configured_vesync.add(vname)
+
+                for h in humidifiers:
+                    state = "on" if h["is_on"] else "off"
+                    state_style = C_OK if state == "on" else C_NOTE
+                    is_cfg = h["name"] in configured_vesync
+                    cfg_str = f"[{C_OK}]yes[/{C_OK}]" if is_cfg else f"[{C_NOTE}]no[/{C_NOTE}]"
+                    vt.add_row(
+                        h["name"], h["type"],
+                        f"[{state_style}]{state}[/{state_style}]",
+                        cfg_str,
+                    )
+                console.print(vt)
+
+            from spriggler.devices.vesync_mgr import shutdown_vesync_manager
+            shutdown_vesync_manager()
+        except Exception as e:
+            console.print(f"[{C_NOTE}]VeSync discovery: {e}[/{C_NOTE}]")
+
     from spriggler.devices.kasa_mgr import shutdown_kasa_manager
     shutdown_kasa_manager()
 
@@ -207,7 +270,7 @@ def device_set(ctx, device_name, state):
     driver_config = dev_cfg.get("driver_config", {})
 
     # Discover device drivers
-    discover_plugins(package="spriggler.devices", exclude={"kasa_mgr"})
+    discover_plugins(package="spriggler.devices", exclude={"kasa_mgr", "vesync_mgr"})
 
     from spriggler.devices import driver_registry
     driver_cls = driver_registry.get(driver_name)
@@ -398,7 +461,7 @@ def device_info(ctx, device_name):
     driver_name = dev_cfg.get("driver")
     driver_config = dev_cfg.get("driver_config", {})
 
-    discover_plugins(package="spriggler.devices", exclude={"kasa_mgr"})
+    discover_plugins(package="spriggler.devices", exclude={"kasa_mgr", "vesync_mgr"})
 
     from spriggler.devices import driver_registry
     driver_cls = driver_registry.get(driver_name)
