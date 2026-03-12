@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ble = ["bleak>=0.21"]
+ble = ["bleak>=0.21", "govee-ble>=0.31", "habluetooth>=3.0"]
 kasa = ["python-kasa>=0.6"]
 vesync = ["pyvesync>=2.1"]
 all = ["spriggler[ble,kasa,vesync]"]
