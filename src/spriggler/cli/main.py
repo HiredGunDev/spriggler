@@ -5,6 +5,8 @@ Usage:  spriggler <command> [subcommand] [options]
 All commands support --help for detailed usage information.
 """
 
+from pathlib import Path
+
 import click
 from rich.console import Console
 
@@ -36,11 +38,11 @@ class SprigglerGroup(click.Group):
 @click.group(cls=SprigglerGroup)
 @click.version_option(package_name="spriggler", prog_name="spriggler")
 @click.option(
-    "--config-dir", "-c",
+    "--home",
     type=click.Path(),
     default="~/.spriggler",
-    envvar="SPRIGGLER_CONFIG_DIR",
-    help="Configuration directory (default: ~/.spriggler, or $SPRIGGLER_CONFIG_DIR).",
+    envvar="SPRIGGLER_HOME",
+    help="Spriggler home directory (default: ~/.spriggler, or $SPRIGGLER_HOME).",
 )
 @click.option(
     "--verbose", "-v",
@@ -53,12 +55,21 @@ class SprigglerGroup(click.Group):
     help="Suppress non-error output.",
 )
 @click.pass_context
-def cli(ctx, config_dir, verbose, quiet):
+def cli(ctx, home, verbose, quiet):
     """Spriggler — physics-informed environmental controller.
 
     Controls temperature, humidity, and other properties across one or
     more enclosed environments using calibration-discovered device
     characteristics and physics-based reasoning.
+
+    \b
+    Home directory layout (~/.spriggler/):
+      config.toml          System topology, targets, safety limits
+      .env                 Secrets (VeSync credentials, etc.)
+      calibration/         Calibration data (created by calibrate run)
+      log/                 Structured JSON logs (created by daemon)
+      status.json          Runtime state (created by daemon)
+      spriggler.pid        Daemon PID file (created by start)
 
     \b
     Quick start:
@@ -73,7 +84,7 @@ def cli(ctx, config_dir, verbose, quiet):
       spriggler <cmd> <sub> --help   Help for a specific subcommand
     """
     ctx.ensure_object(dict)
-    ctx.obj["config_dir"] = config_dir
+    ctx.obj["home"] = Path(home).expanduser()
     ctx.obj["verbose"] = verbose
     ctx.obj["quiet"] = quiet
 

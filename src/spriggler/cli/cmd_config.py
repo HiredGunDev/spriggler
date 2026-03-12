@@ -16,8 +16,8 @@ def config(ctx):
     but the user declares device ROLES and TOPOLOGY through config.
 
     \b
-    Config location: $SPRIGGLER_CONFIG_DIR/config.yaml
-    Default: ~/.spriggler/config.yaml
+    Config location: $SPRIGGLER_HOME/config.toml
+    Default: ~/.spriggler/config.toml
 
     \b
     Subcommands:
@@ -64,7 +64,7 @@ def config_init(ctx, template, output):
     Examples:
       spriggler config init                     Interactive wizard
       spriggler config init --template seedling  Start from seedling template
-      spriggler config init -o ./my-config.yaml  Write to specific path
+      spriggler config init -o ./my-config.toml  Write to specific path
     """
     in_development(
         command="spriggler config init",
@@ -120,7 +120,7 @@ def config_validate(ctx, strict):
 
     \b
     Checks three levels:
-      1. Schema:   YAML structure, required fields, types
+      1. Schema:   TOML structure, required fields, types
       2. Semantic:  Cross-references (devices reference real environments,
                     sensors measure properties that exist, connections
                     reference valid endpoints)
@@ -133,58 +133,109 @@ def config_validate(ctx, strict):
       • Sensor without a matching device (can sense but can't control)
       • Device without a matching sensor (can control but can't verify)
       • Environment with no sensors (unobservable)
-      • Target range narrower than sensor resolution × 2
+      • Safety limits too close to target bands
     """
-    in_development(
-        command="spriggler config validate",
-        phase="Phase 0 (CLI and Calibration)",
-        summary=(
-            "Three-tier validation: schema, semantic, and physics.  "
-            "Must pass before calibration or daemon start.\n\n"
-            "The semantic layer is where most user errors get caught — "
-            "misspelled device names, dangling references, environments "
-            "with no sensors.  Physics checks catch logical errors like "
-            "a heater with 'decrease' direction on temperature.\n\n"
-            "Output is color-coded:\n"
-            "  • Green: all checks pass\n"
-            "  • Yellow: warnings present (operational but suboptimal)\n"
-            "  • Red: errors present (cannot proceed)"
-        ),
-    )
+    from spriggler.config.loader import load_config, ConfigError
+    from spriggler.config.validate import validate_config
+    from spriggler.cli._style import console, C_OK, C_WARN, C_ERROR, C_NOTE
+
+    home = ctx.obj["home"]
+    try:
+        cfg = load_config(home)
+    except ConfigError as e:
+        console.print(f"[{C_ERROR}]Error loading config:[/{C_ERROR}] {e}")
+        raise SystemExit(1)
+
+    result = validate_config(cfg)
+
+    # Summary stats
+    n_envs = len(cfg.get("environments", {}))
+    n_devices = len(cfg.get("devices", {}))
+    n_sensors = len(cfg.get("sensors", {}))
+    n_circuits = len(cfg.get("circuits", {}))
+    n_connections = len(cfg.get("connections", {}))
+    name = cfg.get("meta", {}).get("name", "unnamed")
+    version = cfg.get("meta", {}).get("version", "?")
+
+    def _pl(n: int, word: str) -> str:
+        return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+    # Display results
+    if result.errors:
+        console.print(f"\n[{C_ERROR}]Errors ({len(result.errors)}):[/{C_ERROR}]")
+        for msg in result.errors:
+            console.print(f"  [{C_ERROR}]✗[/{C_ERROR}] {msg}")
+
+    if result.warnings:
+        console.print(f"\n[{C_WARN}]Warnings ({len(result.warnings)}):[/{C_WARN}]")
+        for msg in result.warnings:
+            console.print(f"  [{C_WARN}]⚠[/{C_WARN}] {msg}")
+
+    if result.ok and not result.warnings:
+        console.print(f"\n[{C_OK}]✓ Configuration valid — {name} (v{version})[/{C_OK}]")
+        console.print(
+            f"  [{C_NOTE}]{_pl(n_envs, 'environment')}, {_pl(n_devices, 'device')}, "
+            f"{_pl(n_sensors, 'sensor')}, {_pl(n_connections, 'connection')}, "
+            f"{_pl(n_circuits, 'circuit')}[/{C_NOTE}]"
+        )
+        console.print(f"  [{C_NOTE}]No errors, no warnings[/{C_NOTE}]")
+    elif result.ok and result.warnings:
+        console.print(
+            f"\n[{C_WARN}]⚠ Configuration valid with "
+            f"{len(result.warnings)} warning(s) — {name} (v{version})[/{C_WARN}]"
+        )
+        if strict:
+            console.print(f"  [{C_NOTE}]--strict: treating warnings as errors[/{C_NOTE}]")
+            raise SystemExit(1)
+    else:
+        console.print(f"\n[{C_ERROR}]✗ Configuration invalid — {len(result.errors)} error(s)[/{C_ERROR}]")
+        raise SystemExit(1)
 
 
 @config.command("show")
 @click.option(
     "--section",
     type=click.Choice(["environments", "devices", "sensors", "connections",
-                        "targets", "safety", "schedules", "all"]),
+                        "targets", "schedules", "circuits", "safety", "all"]),
     default="all",
     help="Show a specific section.  Default: all.",
 )
 @click.option(
     "--format", "fmt",
-    type=click.Choice(["yaml", "json", "table"]),
-    default="yaml",
-    help="Output format.  Default: yaml.",
+    type=click.Choice(["toml", "json", "table"]),
+    default="table",
+    help="Output format.  Default: table.",
 )
 @click.pass_context
 def config_show(ctx, section, fmt):
     """Display current configuration.
 
-    Shows the loaded, validated config.  Use --section to focus on
-    a specific part.  Use --format table for a human-readable summary
-    rather than the raw YAML.
+    Shows the loaded config rendered as color-coded tables (default),
+    raw TOML (preserving comments), or JSON.
+
+    \b
+    Use --section to focus on a specific part:
+      spriggler config show --section devices
+      spriggler config show --section safety
+
+    \b
+    Use --format to change output:
+      spriggler config show --format toml    Raw file with comments
+      spriggler config show --format json    Machine-readable
+      spriggler config show                  Rich tables (default)
     """
-    in_development(
-        command="spriggler config show",
-        phase="Phase 0 (CLI and Calibration)",
-        summary=(
-            "Pretty-prints the current config.  The table format renders "
-            "environments, devices, sensors, connections, and targets as "
-            "structured tables rather than raw YAML — useful for quick "
-            "review."
-        ),
-    )
+    from spriggler.config.loader import load_config, ConfigError
+    from spriggler.config.display import render_config
+
+    home = ctx.obj["home"]
+    try:
+        cfg = load_config(home)
+    except ConfigError as e:
+        from spriggler.cli._style import console, C_ERROR
+        console.print(f"[{C_ERROR}]Error loading config:[/{C_ERROR}] {e}")
+        raise SystemExit(1)
+
+    render_config(cfg, section=section, fmt=fmt)
 
 
 @config.command("edit")
@@ -202,7 +253,7 @@ def config_edit(ctx):
             "Opens $EDITOR (or vi) on the config file, then runs "
             "validation on save.  If the edited config is invalid, "
             "shows errors and offers to re-edit or revert.\n\n"
-            "Backs up the previous config to config.yaml.bak before "
+            "Backs up the previous config to config.toml.bak before "
             "any edit."
         ),
     )
@@ -235,7 +286,7 @@ def config_diff(ctx):
 @config.command("schema")
 @click.option(
     "--format", "fmt",
-    type=click.Choice(["json", "yaml"]),
+    type=click.Choice(["json", "toml"]),
     default="json",
     help="Schema output format.  Default: JSON Schema.",
 )
