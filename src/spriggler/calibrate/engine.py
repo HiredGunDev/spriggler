@@ -107,6 +107,26 @@ class EnvironmentCalibration:
     calibrated_at: float = 0.0
 
 
+# ── Property name mapping ────────────────────────────────────────
+# Config uses human-friendly names.  Internally everything is SI.
+# The sensor driver converts at the boundary (%RH → g/m³), so
+# the internal property name is "absolute_humidity", not "humidity".
+
+_PROPERTY_MAP = {
+    "humidity": "absolute_humidity",
+    "temperature": "temperature",
+    # Add more as needed: "co2": "co2", etc.
+}
+
+
+def _map_intended_properties(intended: dict) -> dict:
+    """Map config property names to SI internal names."""
+    return {
+        _PROPERTY_MAP.get(prop, prop): direction
+        for prop, direction in intended.items()
+    }
+
+
 # ── Recording engine ─────────────────────────────────────────────
 
 class CalibrationEngine:
@@ -133,7 +153,12 @@ class CalibrationEngine:
     # Humidity: 3 g/m³ gives similar data quality proportional to
     # the sensor's resolution.
     MIN_DIFFERENTIAL_TEMP = 11.0    # K (~20°F) before we stop activation
-    MIN_DIFFERENTIAL_AH = 3.0      # g/m³ before we stop activation
+    # Humidity: at cold temperatures (e.g., 44°F), the air's capacity
+    # for moisture is much lower.  A small humidifier raising RH from
+    # 70% to 85% at 44°F is only ~1.1 g/m³ in absolute terms.
+    # 1.5 g/m³ is achievable across temperatures while still giving
+    # good signal-to-noise ratio.
+    MIN_DIFFERENTIAL_AH = 1.5      # g/m³ before we stop activation
     MAX_ACTIVATION_TIME = 1800     # 30 min safety cap (20°F rise takes time)
     RECOVERY_THRESHOLD_TEMP = 0.5   # K — within this of baseline = recovered
     RECOVERY_THRESHOLD_AH = 0.3     # g/m³
@@ -280,6 +305,156 @@ class CalibrationEngine:
         self._status("ERROR: No sensor data received")
         return False
 
+    # ── Preconditioning ────────────────────────────────────────
+
+    # How close to ambient before we consider preconditioned
+    PRECONDITION_TEMP_THRESHOLD = 2.0   # K (~3.6°F)
+    PRECONDITION_AH_THRESHOLD = 1.0     # g/m³
+    PRECONDITION_MAX_TIME = 600         # 10 min max fan time
+    PRECONDITION_SETTLE_TIME = 30       # seconds after fan off
+
+    # Thermal warmup for non-temperature devices
+    WARMUP_TEMP_THRESHOLD = 1.0         # K — within this of target = warm
+    WARMUP_MAX_TIME = 1800              # 30 min max heater time
+
+    def _find_transfer_device(self) -> str | None:
+        """Find the fan/transfer device for this environment."""
+        for name, dcfg in self._device_configs.items():
+            if dcfg.get("type") == "transfer":
+                return name
+        return None
+
+    def _find_heater_device(self) -> str | None:
+        """Find the temperature-increasing energy device."""
+        for name, dcfg in self._device_configs.items():
+            props = dcfg.get("intended_properties", {})
+            if props.get("temperature") == "increase":
+                return name
+        return None
+
+    def _get_target_temperature(self) -> float | None:
+        """Get the target temperature from schedule config (in Kelvin).
+
+        Looks for the first schedule phase with a temperature target.
+        Config structure: schedules.<env>.phases = [{name, targets, ...}]
+        """
+        schedules = self._cfg.get("schedules", {})
+        env_schedule = schedules.get(self._env_name, {})
+        phases = env_schedule.get("phases", [])
+
+        for phase in phases:
+            targets = phase.get("targets", {})
+            temp_target = targets.get("temperature")
+            if temp_target is not None:
+                from spriggler.physics.temperature import fahrenheit_to_kelvin
+                return fahrenheit_to_kelvin(float(temp_target))
+
+        return None
+
+    def _precondition(self, intended_properties: dict) -> bool:
+        """Prepare the environment for calibration.
+
+        1. Fan flush toward ambient (universal reset)
+        2. If the device being calibrated is NOT a temperature device,
+           heat to operating temperature first (then heater off)
+
+        Parameters
+        ----------
+        intended_properties : dict
+            Mapped intended properties for the device being calibrated.
+        """
+        fan_name = self._find_transfer_device()
+        fan = self._devices.get(fan_name) if fan_name else None
+
+        # ── Step 1: Fan flush to ambient ─────────────────────────
+        if fan:
+            self._status("Preconditioning: all devices OFF...")
+            for name, device in self._devices.items():
+                device.set_state("off")
+            time.sleep(3)
+
+            self._status(f"Preconditioning: {fan_name} ON — flushing toward ambient...")
+            fan.set_state("on")
+
+            deadline = time.time() + self.PRECONDITION_MAX_TIME
+            while time.time() < deadline:
+                env = self._read_env()
+                amb = self._read_ambient()
+                if env is None or amb is None:
+                    time.sleep(3)
+                    continue
+
+                temp_diff = abs(env.get("temperature", 0) - amb.get("temperature", 0))
+                ah_diff = abs(env.get("absolute_humidity", 0) - amb.get("absolute_humidity", 0))
+
+                elapsed = self.PRECONDITION_MAX_TIME - (deadline - time.time())
+                self._status(
+                    f"  {elapsed:.0f}s: ΔT={temp_diff:.1f}K  ΔAH={ah_diff:.2f}g/m³"
+                )
+
+                if temp_diff < self.PRECONDITION_TEMP_THRESHOLD and \
+                   ah_diff < self.PRECONDITION_AH_THRESHOLD:
+                    self._status("Preconditioning: near ambient")
+                    break
+
+                time.sleep(5)
+
+            fan.set_state("off")
+            time.sleep(self.PRECONDITION_SETTLE_TIME)
+        else:
+            self._status("No transfer device — skipping fan flush")
+
+        # ── Step 2: Thermal warmup if needed ─────────────────────
+        # If we're calibrating a non-temperature device (e.g., humidifier),
+        # heat to operating temperature first.  The device operates in a
+        # warm environment, not a cold one.
+        if "temperature" not in intended_properties:
+            target_k = self._get_target_temperature()
+            heater_name = self._find_heater_device()
+            heater = self._devices.get(heater_name) if heater_name else None
+
+            if target_k and heater:
+                from spriggler.physics.temperature import kelvin_to_fahrenheit
+                target_f = kelvin_to_fahrenheit(target_k)
+                self._status(
+                    f"Preconditioning: warming to operating temp "
+                    f"({target_f:.0f}°F / {target_k:.1f}K)..."
+                )
+                heater.set_state("on")
+
+                deadline = time.time() + self.WARMUP_MAX_TIME
+                while time.time() < deadline:
+                    env = self._read_env()
+                    if env is None:
+                        time.sleep(3)
+                        continue
+
+                    current_temp = env.get("temperature", 0)
+                    diff = target_k - current_temp
+                    current_f = kelvin_to_fahrenheit(current_temp)
+                    self._status(
+                        f"  warming: {current_f:.1f}°F "
+                        f"(target {target_f:.0f}°F, Δ={diff:+.1f}K)"
+                    )
+
+                    if diff < self.WARMUP_TEMP_THRESHOLD:
+                        self._status("Preconditioning: operating temperature reached")
+                        break
+
+                    time.sleep(5)
+
+                # Heater OFF — coast will begin, but slowly (τ~50min)
+                self._status(f"Preconditioning: {heater_name} OFF")
+                heater.set_state("off")
+                time.sleep(10)  # Brief settle after heater off
+            else:
+                if not target_k:
+                    self._status("No target temperature in schedule — skipping warmup")
+                if not heater:
+                    self._status("No heater device — skipping warmup")
+
+        return True
+
     # ── Phase 1: Record ──────────────────────────────────────────
 
     def record_device_state(self, device_name: str,
@@ -294,8 +469,13 @@ class CalibrationEngine:
             self._status(f"Device {device_name} not available")
             return None
 
-        intended = dcfg.get("intended_properties", {})
+        intended = _map_intended_properties(
+            dcfg.get("intended_properties", {})
+        )
         recording = Recording(device_name=device_name, state=state)
+
+        # ── Precondition: flush toward ambient, warm if needed ────
+        self._precondition(intended)
 
         # ── Ensure OFF and settle ────────────────────────────────
         self._status(f"Ensuring {device_name} OFF, waiting for settle...")
@@ -411,7 +591,20 @@ class CalibrationEngine:
         device.set_state("off")
         recording.deactivation_index = len(recording.samples)
 
-        # ── Record recovery — until near baseline or ambient ─────
+        # ── Record recovery — coast then decay back to baseline ──
+        # For humidity properties, natural recovery is extremely slow
+        # (no driving force in a sealed pod).  We record the coast
+        # (overshoot after shutoff), then turn the fan on to flush
+        # back toward ambient.  The fan-assisted portion is still
+        # recorded but marked as fan-assisted decay, not natural.
+        has_humidity = "absolute_humidity" in intended
+        fan_name = self._find_transfer_device()
+        fan = self._devices.get(fan_name) if fan_name else None
+        fan_activated = False
+
+        # Minimum coast time before considering fan-assisted recovery
+        COAST_OBSERVE_TIME = 180  # 3 minutes to capture coast peak
+
         self._status("Recording recovery phase (coast + decay)...")
         recovery_start = time.time()
         recovery_deadline = recovery_start + self.MAX_RECOVERY_TIME
@@ -424,20 +617,29 @@ class CalibrationEngine:
 
             recording.samples.append(s)
 
+            elapsed_recovery = time.time() - recovery_start
+
+            # For humidity: after coast observation, turn fan on
+            # to actively flush back toward ambient
+            if has_humidity and fan and not fan_activated \
+               and elapsed_recovery > COAST_OBSERVE_TIME:
+                self._status(
+                    f"Coast observed for {COAST_OBSERVE_TIME}s — "
+                    f"activating {fan_name} for humidity recovery"
+                )
+                fan.set_state("on")
+                fan_activated = True
+
             # Check if recovered: near baseline for all intended props
             recovered = True
             for prop in intended:
                 current = s.env.get(prop)
                 base = baseline.get(prop)
-                amb_val = s.ambient.get(prop)
 
                 if current is None or base is None:
                     recovered = False
                     continue
 
-                # "Recovered" = within threshold of baseline, OR
-                # we've passed baseline heading toward ambient
-                # (ambient might be colder than where we started)
                 diff_from_base = abs(current - base)
 
                 if prop == "temperature":
@@ -450,16 +652,16 @@ class CalibrationEngine:
                 if diff_from_base > threshold:
                     recovered = False
 
-            elapsed_recovery = time.time() - recovery_start
             if len(recording.samples) % 5 == 0:
                 for prop in intended:
                     current = s.env.get(prop)
                     base = baseline.get(prop)
                     if current is not None and base is not None:
                         delta = current - base
+                        fan_tag = " [fan]" if fan_activated else ""
                         self._status(
                             f"  recovery {elapsed_recovery:.0f}s: "
-                            f"{prop} Δ from baseline={delta:+.4f}"
+                            f"{prop} Δ from baseline={delta:+.4f}{fan_tag}"
                         )
 
             if recovered:
@@ -469,6 +671,11 @@ class CalibrationEngine:
                 break
 
             time.sleep(3)
+
+        # Turn fan off if we activated it
+        if fan_activated and fan:
+            fan.set_state("off")
+            time.sleep(5)
 
         self._status(
             f"Recording complete: {len(recording.samples)} samples "
@@ -786,7 +993,9 @@ class CalibrationEngine:
 
         for name in calibratable:
             dcfg = self._device_configs[name]
-            intended = dcfg.get("intended_properties", {})
+            intended = _map_intended_properties(
+                dcfg.get("intended_properties", {})
+            )
             device = self._devices[name]
             states = device.get_states()
             active_states = [s for s in states if s != "off"]
