@@ -90,6 +90,9 @@ def calibrate_run(ctx, environment, device, include_passive):
         console.print(f"[{C_ERROR}]Config error:[/{C_ERROR}] {e}")
         raise SystemExit(1)
 
+    # Engine needs home path to load existing calibrations
+    cfg["_home"] = str(home)
+
     # Validate environment exists
     if environment not in cfg.get("environments", {}):
         available = ", ".join(cfg.get("environments", {}).keys())
@@ -154,24 +157,27 @@ def calibrate_run(ctx, environment, device, include_passive):
             console.print(f"    State: {state}")
             if scal.power_draw is not None:
                 console.print(f"      Power: {scal.power_draw:.1f}W")
+            if scal.avg_temp_during_activation is not None:
+                avg_f = kelvin_to_fahrenheit(scal.avg_temp_during_activation)
+                console.print(f"      Avg temp during run: {avg_f:.1f}°F")
             for prop, pcal in scal.properties.items():
-                rate_display = pcal.rate
-                unit = ""
                 if prop == "temperature":
-                    # Convert K/s to °F/min for readability
-                    rate_display = pcal.rate * 9/5 * 60  # K/s → °F/min
-                    coast_display = pcal.coast_overshoot * 9/5  # K → °F
-                    unit = "°F"
+                    rate_display = pcal.rate * 9/5 * 60
+                    coast_display = pcal.coast_overshoot * 9/5
                     console.print(
                         f"      {prop}: rate={rate_display:+.3f}°F/min  "
                         f"coast={coast_display:+.3f}°F over {pcal.coast_duration:.0f}s"
                     )
                 elif prop == "absolute_humidity":
-                    rate_display = pcal.rate * 60  # g/m³/s → g/m³/min
-                    console.print(
+                    rate_display = pcal.rate * 60
+                    line = (
                         f"      {prop}: rate={rate_display:+.4f} g/m³/min  "
                         f"coast={pcal.coast_overshoot:+.4f} g/m³ over {pcal.coast_duration:.0f}s"
                     )
+                    if pcal.rate_raw is not None:
+                        raw_display = pcal.rate_raw * 60
+                        line += f"\n        (raw={raw_display:+.4f}, temp-compensated={rate_display:+.4f})"
+                    console.print(line)
                 else:
                     console.print(
                         f"      {prop}: rate={pcal.rate:.6f}/s  "

@@ -189,3 +189,99 @@ class TestCalibrationSerialization:
             .properties["temperature"].coast_profile
         assert len(profile) == 4
         assert profile[0] == [0, 300.0]  # JSON converts tuples to lists
+
+    def test_rate_raw_preserved(self, tmp_path):
+        """rate_raw (pre-compensation) survives serialization."""
+        cal = _make_sample_cal()
+        # Add rate_raw to a humidifier property
+        hum_low = cal.devices["seedling_humidifier"].states["low"]
+        hum_low.properties["absolute_humidity"].rate_raw = 0.006
+        save_calibration(cal, tmp_path)
+        loaded = load_calibration("seedling", tmp_path)
+        ah_cal = loaded.devices["seedling_humidifier"].states["low"] \
+            .properties["absolute_humidity"]
+        assert ah_cal.rate_raw == pytest.approx(0.006)
+        assert ah_cal.rate == pytest.approx(0.008)  # compensated rate
+
+    def test_avg_temp_preserved(self, tmp_path):
+        """avg_temp_during_activation survives serialization."""
+        cal = _make_sample_cal()
+        cal.devices["seedling_humidifier"].states["low"].avg_temp_during_activation = 299.8
+        save_calibration(cal, tmp_path)
+        loaded = load_calibration("seedling", tmp_path)
+        assert loaded.devices["seedling_humidifier"].states["low"] \
+            .avg_temp_during_activation == pytest.approx(299.8)
+
+
+class TestAHCompensation:
+    """Test absolute humidity temperature compensation."""
+
+    def test_constant_temperature_no_change(self):
+        """If temperature doesn't change, compensation is a no-op."""
+        from spriggler.calibrate.engine import _compensate_ah_for_temperature
+
+        baseline_temp = 300.0  # ~80°F
+        baseline_ah = 15.0
+
+        ah_series = [(0, 15.0), (10, 16.0), (20, 17.0)]
+        temp_series = [(0, 300.0), (10, 300.0), (20, 300.0)]
+
+        compensated = _compensate_ah_for_temperature(
+            ah_series, temp_series, baseline_temp, baseline_ah,
+        )
+        # With constant temperature, compensated should equal original
+        for (t_orig, v_orig), (t_comp, v_comp) in zip(ah_series, compensated):
+            assert v_comp == pytest.approx(v_orig, abs=0.01)
+
+    def test_cooling_without_moisture_addition(self):
+        """Cooling with no moisture change should compensate to flat."""
+        from spriggler.calibrate.engine import (
+            _compensate_ah_for_temperature,
+            _ah_from_temp_and_rh,
+            _rh_from_temp_and_ah,
+        )
+
+        baseline_temp = 300.0  # ~80°F
+        baseline_ah = 15.0
+        baseline_rh = _rh_from_temp_and_ah(baseline_temp, baseline_ah)
+
+        # Temperature drops, but %RH stays the same (constant water content)
+        # AH drops because air capacity decreases
+        temps = [300.0, 298.0, 296.0]
+        ah_values = [_ah_from_temp_and_rh(t, baseline_rh) for t in temps]
+
+        ah_series = [(i * 10, ah) for i, ah in enumerate(ah_values)]
+        temp_series = [(i * 10, t) for i, t in enumerate(temps)]
+
+        compensated = _compensate_ah_for_temperature(
+            ah_series, temp_series, baseline_temp, baseline_ah,
+        )
+        # Compensated values should all be close to baseline
+        for t, v in compensated:
+            assert v == pytest.approx(baseline_ah, abs=0.05)
+
+    def test_moisture_addition_detected(self):
+        """Moisture added during cooling should show positive rate."""
+        from spriggler.calibrate.engine import (
+            _compensate_ah_for_temperature,
+            _ah_from_temp_and_rh,
+            _rh_from_temp_and_ah,
+        )
+
+        baseline_temp = 300.0
+        baseline_ah = 15.0
+        baseline_rh = _rh_from_temp_and_ah(baseline_temp, baseline_ah)
+
+        # Temperature drops, but we ADD moisture (RH increases)
+        temps = [300.0, 298.0, 296.0]
+        rhs = [baseline_rh, baseline_rh + 0.05, baseline_rh + 0.10]
+        ah_values = [_ah_from_temp_and_rh(t, rh) for t, rh in zip(temps, rhs)]
+
+        ah_series = [(i * 10, ah) for i, ah in enumerate(ah_values)]
+        temp_series = [(i * 10, t) for i, t in enumerate(temps)]
+
+        compensated = _compensate_ah_for_temperature(
+            ah_series, temp_series, baseline_temp, baseline_ah,
+        )
+        # Compensated should show an increase (moisture was added)
+        assert compensated[-1][1] > compensated[0][1]
