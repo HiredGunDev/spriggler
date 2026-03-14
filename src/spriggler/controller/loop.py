@@ -520,14 +520,15 @@ class EnvironmentController:
 
             delta = current_val - target_val
 
-            # Get coast overshoot from calibration
+            # Get coast overshoot from calibration (use highest state)
             coast = 0.0
             if cal:
                 for state_name, scal in cal.states.items():
                     pcal = scal.properties.get(prop)
                     if pcal:
-                        coast = abs(pcal.coast_overshoot)
-                        break
+                        c = abs(pcal.coast_overshoot)
+                        if c > coast:
+                            coast = c
 
             # Use half the coast overshoot so the oscillation is
             # symmetric around target:
@@ -538,9 +539,10 @@ class EnvironmentController:
 
             if direction == "increase":
                 if delta < -half_coast:
-                    # Below target - half_coast: need to activate
-                    states = device.get_states()
-                    desired = states[-1]  # highest
+                    # Below target: activate.  Pick state based on
+                    # distance — HIGH when far, LOW when close.
+                    desired = self._select_graduated_state(
+                        device, cal, prop, abs(delta), half_coast)
                     if dev_state.commanded_state != desired:
                         dev_state.reason = (
                             f"{prop} {abs(delta):.1f} below target"
@@ -557,8 +559,8 @@ class EnvironmentController:
 
             elif direction == "decrease":
                 if delta > half_coast:
-                    states = device.get_states()
-                    desired = states[-1]
+                    desired = self._select_graduated_state(
+                        device, cal, prop, abs(delta), half_coast)
                     if dev_state.commanded_state != desired:
                         dev_state.reason = (
                             f"{prop} {delta:.1f} above target"
@@ -569,6 +571,39 @@ class EnvironmentController:
                     return "off"
 
         return None
+
+    def _select_graduated_state(self, device, cal, prop: str,
+                                distance: float,
+                                half_coast: float) -> str:
+        """Select the appropriate state for a graduated device.
+
+        For devices with multiple active states (e.g., humidifier
+        LOW/HIGH), pick based on distance from target:
+          - Far from target (> 2× half_coast): use highest state
+          - Close to target (≤ 2× half_coast): use lowest state
+
+        For binary devices (on/off), always returns "on".
+        Falls back to highest state if no calibration data exists.
+        """
+        states = device.get_states()
+        active_states = [s for s in states if s != "off"]
+
+        if len(active_states) <= 1:
+            return active_states[0] if active_states else "on"
+
+        # Threshold: use LOW when within 2× half_coast of target,
+        # HIGH when further away.  This prevents HIGH from
+        # overshooting when we're close.
+        threshold = half_coast * 2.0
+
+        # For devices with more than 2 states, distribute evenly
+        # across the range.  For 2 states (low/high), this gives:
+        #   distance ≤ threshold → low
+        #   distance > threshold → high
+        if distance <= threshold:
+            return active_states[0]  # lowest
+        else:
+            return active_states[-1]  # highest
 
     def _decide_scheduled_device(self, device_name: str,
                                  schedule_devices: dict) -> str | None:
@@ -587,48 +622,133 @@ class EnvironmentController:
 
         return None
 
+    def _recovery_time(self, prop: str, delta: float) -> float:
+        """Estimate seconds to recover a property delta using the
+        responsible energy device's calibration rate.
+
+        Searches all calibrated energy devices for one that affects
+        the given property, uses its highest-state rate.
+        Returns float('inf') if no device can address this property.
+        """
+        if abs(delta) < 0.001:
+            return 0.0
+
+        for dev_name, dcal in self._cal.devices.items():
+            dcfg = self._device_configs.get(dev_name, {})
+            intended = _map_intended_properties(
+                dcfg.get("intended_properties", {})
+            )
+            if prop not in intended:
+                continue
+
+            # Find the best rate across all states
+            best_rate = 0.0
+            for state_name, scal in dcal.states.items():
+                pcal = scal.properties.get(prop)
+                if pcal and abs(pcal.rate) > best_rate:
+                    best_rate = abs(pcal.rate)
+
+            if best_rate > 0:
+                return abs(delta) / best_rate  # seconds
+
+        return float("inf")
+
     def _decide_transfer_device(self, device_name: str,
                                 current: dict, ambient: dict,
                                 targets: dict) -> str | None:
-        """Decide transfer device state based on differential.
+        """Decide transfer device state using recovery time analysis.
 
-        The fan should run when ambient is closer to target than
-        pod is — i.e., exchanging air with ambient helps.
+        The fan exchanges air with ambient on ALL properties
+        simultaneously.  For each property, venting either helps
+        (moves toward target) or hurts (moves away from target).
 
-        CONFLICT RULE: don't vent while the humidifier is actively
-        adding moisture.  Venting dumps humidity faster than the
-        humidifier can add it.
+        We compute recovery time for each affected property:
+        how long would the responsible energy device take to fix
+        the delta?  Venting is a net win if the total recovery
+        time saved exceeds the total recovery time added.
+
+        This uses calibration data to normalize across properties —
+        no comparison of °F to g/m³, just seconds to seconds.
         """
         dev_state = self._state.devices[device_name]
 
-        # Check if any humidity device is actively running
-        humidifier_active = False
-        for name, ds in self._state.devices.items():
-            dcfg = self._device_configs.get(name, {})
-            intended = dcfg.get("intended_properties", {})
-            if "humidity" in intended and ds.commanded_state != "off":
-                humidifier_active = True
-                break
+        if not ambient:
+            return None
 
-        if humidifier_active:
+        # For each property, determine if venting helps or hurts,
+        # and by how much (in recovery-time seconds)
+        time_saved = 0.0    # recovery time we'd save by venting
+        time_cost = 0.0     # recovery time we'd add by venting
+        any_excursion = False
+
+        for prop in ("temperature", "absolute_humidity"):
+            env_val = current.get(prop)
+            amb_val = ambient.get(prop)
+            target_val = targets.get(prop)
+            if env_val is None or amb_val is None or target_val is None:
+                continue
+
+            delta_from_target = env_val - target_val
+            if abs(delta_from_target) < 0.001:
+                continue
+
+            any_excursion = True
+
+            # Which direction does venting push this property?
+            # Fan moves pod toward ambient.
+            vent_direction = amb_val - env_val  # positive = venting increases
+
+            # Does that help or hurt?
+            if delta_from_target > 0:
+                # Pod is above target — we want to decrease
+                if vent_direction < 0:
+                    # Venting decreases — helps
+                    time_saved += self._recovery_time(
+                        prop, abs(delta_from_target))
+                else:
+                    # Venting increases — hurts (pushes further above)
+                    time_cost += self._recovery_time(
+                        prop, abs(delta_from_target))
+            else:
+                # Pod is below target — we want to increase
+                if vent_direction > 0:
+                    # Venting increases — helps
+                    time_saved += self._recovery_time(
+                        prop, abs(delta_from_target))
+                else:
+                    # Venting decreases — hurts (pushes further below)
+                    time_cost += self._recovery_time(
+                        prop, abs(delta_from_target))
+
+        # Minimum net savings threshold to avoid thrashing
+        MIN_NET_SAVINGS = 30.0  # seconds
+
+        if not any_excursion:
+            # Everything at target — no reason to vent
             if dev_state.commanded_state != "off":
-                dev_state.reason = "holding — humidifier active"
+                dev_state.reason = "at target — no excursion"
                 return "off"
             return None
 
-        pod_temp = current.get("temperature")
-        amb_temp = ambient.get("temperature")
-        target_temp = targets.get("temperature")
+        net = time_saved - time_cost
 
-        if pod_temp and amb_temp and target_temp:
-            if pod_temp > target_temp and amb_temp < pod_temp:
-                if dev_state.commanded_state != "on":
-                    dev_state.reason = "venting — pod above target"
-                    return "on"
-            elif pod_temp <= target_temp:
-                if dev_state.commanded_state != "off":
-                    dev_state.reason = "pod at/below target"
-                    return "off"
+        if net > MIN_NET_SAVINGS:
+            if dev_state.commanded_state != "on":
+                dev_state.reason = (
+                    f"venting — net {net:.0f}s recovery saved")
+                return "on"
+        else:
+            if dev_state.commanded_state != "off":
+                if time_cost > 0 and time_saved > 0:
+                    dev_state.reason = (
+                        f"holding — mixed ({time_saved:.0f}s saved "
+                        f"vs {time_cost:.0f}s cost)")
+                elif time_cost > 0:
+                    dev_state.reason = (
+                        f"holding — venting hurts ({time_cost:.0f}s cost)")
+                else:
+                    dev_state.reason = "holding — no benefit"
+                return "off"
 
         return None
 
@@ -754,11 +874,15 @@ class EnvironmentController:
         schedule = self._resolve_schedule()
         targets = dict(schedule["targets"])
 
-        # Convert %RH target to AH at current temperature
+        # Convert %RH target to AH at the SCHEDULE target temperature,
+        # not current temperature.  This keeps the AH target fixed
+        # regardless of where we are in the heater cycle.  Otherwise
+        # the humidifier chases a moving target that oscillates with
+        # every heater on/off.
         rh_target = targets.pop("_rh_target", None)
-        current_temp = env.get("temperature")
-        if rh_target and current_temp:
-            ah_target = self._compute_ah_target(rh_target, current_temp)
+        target_temp = targets.get("temperature")
+        if rh_target and target_temp:
+            ah_target = self._compute_ah_target(rh_target, target_temp)
             targets["absolute_humidity"] = ah_target
 
         # 3. Update property states

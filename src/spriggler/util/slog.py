@@ -33,30 +33,72 @@ log = logging.getLogger("spriggler.slog")
 
 
 class StructuredLogger:
-    """Append-only structured JSON logger."""
+    """Append-only structured JSON logger with daily rotation.
 
-    def __init__(self, home: Path, filename: str = "spriggler.log") -> None:
-        self._path = home / "log" / filename
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+    Log files are named by date: spriggler.2026-03-14.log
+    On each write, checks if the date has changed and rotates.
+    Old files beyond retention_days are deleted.
+    """
+
+    DEFAULT_RETENTION_DAYS = 180
+
+    def __init__(self, home: Path,
+                 retention_days: int = DEFAULT_RETENTION_DAYS) -> None:
+        self._log_dir = home / "log"
+        self._log_dir.mkdir(parents=True, exist_ok=True)
+        self._retention_days = retention_days
         self._file = None
-        self._open()
+        self._current_date: str = ""
+        self._rotate()
+        self._cleanup_old_logs()
 
-    def _open(self) -> None:
+    def _date_str(self) -> str:
+        return datetime.now().strftime("%Y-%m-%d")
+
+    def _log_path(self, date_str: str) -> Path:
+        return self._log_dir / f"spriggler.{date_str}.log"
+
+    def _rotate(self) -> None:
+        """Open today's log file. Close yesterday's if open."""
+        today = self._date_str()
+        if today == self._current_date and self._file:
+            return
+        if self._file:
+            try:
+                self._file.close()
+            except Exception:
+                pass
+        self._current_date = today
         try:
-            self._file = open(self._path, "a", buffering=1)  # line-buffered
+            self._file = open(
+                self._log_path(today), "a", buffering=1)
         except Exception as e:
-            log.error("Cannot open log file %s: %s", self._path, e)
+            log.error("Cannot open log file: %s", e)
             self._file = None
+
+    def _cleanup_old_logs(self) -> None:
+        """Delete log files older than retention_days."""
+        import glob
+        cutoff = datetime.now().timestamp() - (
+            self._retention_days * 86400)
+        for path in self._log_dir.glob("spriggler.*.log"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+                    log.info("Deleted old log: %s", path.name)
+            except Exception:
+                pass
 
     def log(self, event: str, **kwargs: Any) -> None:
         """Write one structured log entry."""
+        self._rotate()  # Check if date changed
+
         entry = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "event": event,
         }
         entry.update(kwargs)
 
-        # Write to file
         if self._file:
             try:
                 self._file.write(json.dumps(entry, default=str) + "\n")

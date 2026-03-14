@@ -267,9 +267,21 @@ class CalibrationEngine:
         self._device_configs: dict = {}
         self._heater_cal: DeviceCalibration | None = None  # Loaded if available
 
+        # Structured logger — writes to same daily log as controller
+        self._slog = None
+        home = cfg.get("_home")
+        if home:
+            from spriggler.util.slog import StructuredLogger
+            self._slog = StructuredLogger(Path(home))
+
     def _status(self, msg: str) -> None:
         log.info(msg)
         self._on_status(msg)
+
+    def _cal_log(self, event: str, **kwargs) -> None:
+        """Log a calibration event to the structured log."""
+        if self._slog:
+            self._slog.log_calibration_event(event, **kwargs)
 
     # ── Sensor helpers ───────────────────────────────────────────
 
@@ -381,6 +393,12 @@ class CalibrationEngine:
                     f"Sensors online: T={env.get('temperature', 0):.2f}K "
                     f"AH={env.get('absolute_humidity', 0):.2f}g/m³"
                 )
+                self._cal_log("setup",
+                              environment=self._env_name,
+                              sensors=list(self._sensors.keys()),
+                              devices=list(self._devices.keys()),
+                              temperature=env.get('temperature'),
+                              absolute_humidity=env.get('absolute_humidity'))
                 return True
             time.sleep(1)
 
@@ -1436,14 +1454,34 @@ class CalibrationEngine:
                 self._status(f"\n{'='*50}")
                 self._status(f"Recording {name} state: {state}")
                 self._status(f"{'='*50}")
+                self._cal_log("device.start",
+                              device=name, state=state, type="energy")
 
                 recording = self.record_device_state(name, state)
                 if recording is None:
+                    self._cal_log("device.failed",
+                                  device=name, state=state)
                     continue
 
                 self._status(f"\nAnalyzing {name} / {state}...")
                 state_cal = self.analyze_recording(recording, intended)
                 dcal.states[state] = state_cal
+
+                # Log results
+                results = {}
+                for prop, pcal in state_cal.properties.items():
+                    results[prop] = {
+                        "rate": pcal.rate,
+                        "rate_raw": pcal.rate_raw,
+                        "coast_overshoot": pcal.coast_overshoot,
+                        "coast_duration": pcal.coast_duration,
+                    }
+                self._cal_log("device.complete",
+                              device=name, state=state,
+                              power=state_cal.power_draw,
+                              properties=results,
+                              thermal_byproduct=state_cal.thermal_byproduct_rate,
+                              samples=len(recording.samples))
 
             dcal.calibrated_at = time.time()
             env_cal.devices[name] = dcal
@@ -1471,14 +1509,30 @@ class CalibrationEngine:
                 self._status(f"\n{'='*50}")
                 self._status(f"Recording {name} (scheduled) state: {state}")
                 self._status(f"{'='*50}")
+                self._cal_log("device.start",
+                              device=name, state=state, type="scheduled")
 
                 recording = self.record_scheduled_device(name, state)
                 if recording is None:
+                    self._cal_log("device.failed",
+                                  device=name, state=state)
                     continue
 
                 self._status(f"\nAnalyzing {name} / {state}...")
                 state_cal = self.analyze_scheduled(recording)
                 dcal.states[state] = state_cal
+
+                results = {}
+                for prop, pcal in state_cal.properties.items():
+                    results[prop] = {
+                        "rate": pcal.rate,
+                        "coast_overshoot": pcal.coast_overshoot,
+                    }
+                self._cal_log("device.complete",
+                              device=name, state=state,
+                              power=state_cal.power_draw,
+                              properties=results,
+                              samples=len(recording.samples))
 
             dcal.calibrated_at = time.time()
             env_cal.devices[name] = dcal
@@ -1498,9 +1552,13 @@ class CalibrationEngine:
                 self._status(f"\n{'='*50}")
                 self._status(f"Recording {name} (transfer) state: {state}")
                 self._status(f"{'='*50}")
+                self._cal_log("device.start",
+                              device=name, state=state, type="transfer")
 
                 samples = self.record_transfer_device(name, state)
                 if samples is None:
+                    self._cal_log("device.failed",
+                                  device=name, state=state)
                     continue
 
                 self._status(f"\nAnalyzing {name} / {state}...")
@@ -1528,6 +1586,12 @@ class CalibrationEngine:
                                 f"(diff={old_diff:.1f}K > {new_diff:.1f}K)"
                             )
 
+                self._cal_log("device.complete",
+                              device=name, state=state,
+                              conductance=state_cal.conductance,
+                              conductance_differential=state_cal.conductance_differential,
+                              samples=len(samples))
+
                 dcal.states[state] = state_cal
 
             dcal.calibrated_at = time.time()
@@ -1547,13 +1611,26 @@ class CalibrationEngine:
                     self._status(
                         f"  {prop}: accepted (diff={new_diff:.1f}K)"
                     )
+                    self._cal_log("passive.accepted",
+                                  property=prop,
+                                  g_passive=data["g_passive"],
+                                  tau=data["tau"],
+                                  differential=new_diff)
                 else:
                     self._status(
                         f"  {prop}: KEPT existing (existing diff="
                         f"{existing_diff:.1f}K > new {new_diff:.1f}K)"
                     )
+                    self._cal_log("passive.kept_existing",
+                                  property=prop,
+                                  existing_diff=existing_diff,
+                                  new_diff=new_diff)
 
         env_cal.calibrated_at = time.time()
+        self._cal_log("run.complete",
+                      environment=self._env_name,
+                      devices=list(env_cal.devices.keys()),
+                      passive=dict(env_cal.passive_conductance))
         return env_cal
 
 
