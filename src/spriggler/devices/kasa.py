@@ -82,11 +82,23 @@ class KasaDevice(DeviceDriver):
             return False
 
     def read_power(self) -> float | None:
-        """Read current power draw in watts.  None if not supported."""
+        """Read current power draw from cache (non-blocking).
+
+        Returns the most recent background-updated reading.
+        Falls back to a direct read only if no cache exists yet.
+        """
         from spriggler.devices.kasa_mgr import get_kasa_manager, KasaError
         try:
             self._ensure_plug()
             mgr = get_kasa_manager()
+
+            # Try cached first (non-blocking)
+            cached = mgr.read_power_cached(
+                self._strip_name, self._plug_name)
+            if cached is not None:
+                return cached
+
+            # No cache yet — do a blocking read (startup only)
             return mgr.read_power(self._plug)
         except (KasaError, DeviceCommandError):
             return None

@@ -89,6 +89,9 @@ class StateCalibration:
     thermal_byproduct_rate: float | None = None
     power_draw: float | None = None
     avg_temp_during_activation: float | None = None
+    # For transfer devices: conductance when this device is active
+    conductance: dict[str, float] = field(default_factory=dict)  # prop → g value
+    conductance_differential: dict[str, float] = field(default_factory=dict)  # prop → differential
 
 
 @dataclass
@@ -105,8 +108,11 @@ class EnvironmentCalibration:
     """Analyzed calibration for one environment."""
     environment_name: str
     devices: dict[str, DeviceCalibration] = field(default_factory=dict)
+    # Passive conductance: prop → g value (best measurement)
     passive_conductance: dict[str, float] = field(default_factory=dict)
     time_constant: dict[str, float] = field(default_factory=dict)
+    # Differential at which each conductance was measured — larger = more trustworthy
+    passive_differential: dict[str, float] = field(default_factory=dict)
     calibrated_at: float = 0.0
 
 
@@ -853,6 +859,236 @@ class CalibrationEngine:
         )
         return recording
 
+    # ── Transfer device (fan) calibration ──────────────────────
+
+    TRANSFER_MEASUREMENT_TIME = 600
+
+    def record_transfer_device(self, device_name: str,
+                               state: str) -> list | None:
+        """Record decay with transfer device active."""
+        device = self._devices.get(device_name)
+        if device is None:
+            self._status(f"Device {device_name} not available")
+            return None
+        dep_error = self._check_precondition_deps(
+            {"absolute_humidity": "increase"})
+        if dep_error:
+            self._status(f"ERROR: {dep_error}")
+            return None
+        self._precondition({"absolute_humidity": "increase"})
+        heater_name = self._find_heater_device()
+        heater = self._devices.get(heater_name) if heater_name else None
+        if heater:
+            heater.set_state("off")
+        self._status(f"Activating {device_name} → {state}")
+        device.set_state(state)
+        time.sleep(3)
+        self._status(f"Recording decay with {device_name} for {self.TRANSFER_MEASUREMENT_TIME}s...")
+        samples: list[Sample] = []
+        start = time.time()
+        while time.time() - start < self.TRANSFER_MEASUREMENT_TIME:
+            s = self._sample(start)
+            if s:
+                samples.append(s)
+                if len(samples) % 10 == 0:
+                    amb_temp = s.ambient.get("temperature")
+                    amb_str = f"{amb_temp:.2f}K" if amb_temp else "—"
+                    self._status(
+                        f"  {s.elapsed:.0f}s: "
+                        f"T={s.env.get('temperature', 0):.2f}K "
+                        f"amb={amb_str}")
+            time.sleep(5)
+        device.set_state("off")
+        self._status(f"Transfer recording: {len(samples)} samples")
+        return samples
+
+    def analyze_transfer(self, samples: list,
+                         state: str) -> StateCalibration:
+        """Analyze transfer device — extract conductance."""
+        state_cal = StateCalibration(state=state)
+        if len(samples) < 5:
+            self._status("WARNING: Not enough transfer data")
+            return state_cal
+        for prop in ("temperature", "absolute_humidity"):
+            env_pts, amb_pts = [], []
+            for s in samples:
+                ev = s.env.get(prop)
+                av = s.ambient.get(prop)
+                if ev is not None and av is not None and av > 0:
+                    env_pts.append((s.elapsed, ev))
+                    amb_pts.append((s.elapsed, av))
+            if len(env_pts) < 3 or len(amb_pts) < 3:
+                continue
+            avg_amb = sum(v for _, v in amb_pts) / len(amb_pts)
+            rate = self._linear_slope(env_pts)
+            avg_env = sum(v for _, v in env_pts) / len(env_pts)
+            diff = avg_amb - avg_env
+            if abs(diff) < 0.1:
+                self._status(f"  {prop}: differential too small ({diff:.2f})")
+                continue
+            g_active = rate / diff
+            state_cal.conductance[prop] = g_active
+            state_cal.conductance_differential[prop] = abs(diff)
+            tau = 1.0 / g_active if g_active != 0 else float("inf")
+            self._status(
+                f"  {prop}: g_active={g_active:.6f}/s  "
+                f"τ={tau:.0f}s ({tau/60:.1f}min)  "
+                f"diff={diff:+.2f}")
+        return state_cal
+
+    # ── Scheduled device (lights) calibration ────────────────────
+
+    SCHEDULED_MEASUREMENT_TIME = 600
+
+    def record_scheduled_device(self, device_name: str,
+                                state: str) -> Recording | None:
+        """Record thermal byproduct of a scheduled device (lights)."""
+        device = self._devices.get(device_name)
+        dcfg = self._device_configs.get(device_name)
+        if device is None or dcfg is None:
+            self._status(f"Device {device_name} not available")
+            return None
+        recording = Recording(device_name=device_name, state=state)
+        dep_error = self._check_precondition_deps(
+            {"absolute_humidity": "increase"})
+        if dep_error:
+            self._status(f"ERROR: {dep_error}")
+            return None
+        self._precondition({"absolute_humidity": "increase"})
+        heater_name = self._find_heater_device()
+        heater = self._devices.get(heater_name) if heater_name else None
+        if heater:
+            heater.set_state("off")
+        self._status(f"Ensuring {device_name} OFF, waiting for settle...")
+        device.set_state("off")
+        time.sleep(5)
+        baseline = self._wait_for_settle()
+        if baseline is None:
+            baseline = self._read_env()
+            if baseline is None:
+                self._status("ERROR: No sensor data")
+                return None
+        self._status(
+            f"Baseline: T={baseline.get('temperature', 0):.2f}K "
+            f"AH={baseline.get('absolute_humidity', 0):.2f}g/m³")
+        amb = self._read_ambient()
+        if amb:
+            recording.ambient_temp_at_start = amb.get("temperature")
+        rec_start = time.time()
+        self._status("Recording baseline...")
+        for _ in range(5):
+            s = self._sample(rec_start)
+            if s:
+                recording.samples.append(s)
+            time.sleep(3)
+        self._status(f"Activating {device_name} → {state}")
+        device.set_state(state)
+        recording.activation_index = len(recording.samples)
+        activation_time = time.time()
+        power_draw = None
+        if hasattr(device, "read_power"):
+            self._status(f"Waiting {self.POWER_READ_DELAY}s for power...")
+            pw_end = time.time() + self.POWER_READ_DELAY
+            while time.time() < pw_end:
+                s = self._sample(rec_start)
+                if s:
+                    recording.samples.append(s)
+                time.sleep(3)
+            power_draw = device.read_power()
+            if power_draw is not None:
+                self._status(f"Power draw: {power_draw:.1f}W")
+        self._status(f"Recording thermal byproduct for {self.SCHEDULED_MEASUREMENT_TIME}s...")
+        deadline = activation_time + self.SCHEDULED_MEASUREMENT_TIME
+        while time.time() < deadline:
+            s = self._sample(rec_start)
+            if s is None:
+                time.sleep(3)
+                continue
+            s.power = power_draw
+            recording.samples.append(s)
+            elapsed = time.time() - activation_time
+            if len(recording.samples) % 10 == 0:
+                temp = s.env.get("temperature")
+                base_t = baseline.get("temperature")
+                if temp and base_t:
+                    from spriggler.physics.temperature import kelvin_to_fahrenheit
+                    delta_f = (temp - base_t) * 9/5
+                    self._status(
+                        f"  {elapsed:.0f}s: "
+                        f"{kelvin_to_fahrenheit(temp):.1f}°F "
+                        f"(Δ={delta_f:+.2f}°F)")
+            time.sleep(3)
+        self._status(f"Deactivating {device_name} → off")
+        device.set_state("off")
+        recording.deactivation_index = len(recording.samples)
+        self._status("Recording coast...")
+        coast_end = time.time() + 180
+        while time.time() < coast_end:
+            s = self._sample(rec_start)
+            if s:
+                recording.samples.append(s)
+            time.sleep(3)
+        self._status(
+            f"Recording complete: {len(recording.samples)} samples "
+            f"over {recording.samples[-1].elapsed:.0f}s")
+        return recording
+
+    def analyze_scheduled(self, recording: Recording) -> StateCalibration:
+        """Analyze scheduled device — extract thermal contribution."""
+        samples = recording.samples
+        act_idx = recording.activation_index
+        deact_idx = recording.deactivation_index
+        if deact_idx <= act_idx or len(samples) < 5:
+            self._status("WARNING: Not enough data")
+            return StateCalibration(state=recording.state)
+        act_samples = samples[act_idx:deact_idx]
+        rec_samples = samples[deact_idx:]
+        power_readings = [s.power for s in act_samples if s.power is not None]
+        power_draw = None
+        if power_readings:
+            power_readings.sort()
+            power_draw = power_readings[len(power_readings) // 2]
+        state_cal = StateCalibration(state=recording.state, power_draw=power_draw)
+        act_temps = [s.env.get("temperature") for s in act_samples
+                     if "temperature" in s.env]
+        if act_temps:
+            state_cal.avg_temp_during_activation = sum(act_temps) / len(act_temps)
+        act_start = act_samples[0].elapsed
+        deact_time = rec_samples[0].elapsed if rec_samples else 0
+        temp_pts = [(s.elapsed - act_start, s.env.get("temperature"))
+                    for s in act_samples if "temperature" in s.env]
+        if len(temp_pts) >= 2:
+            temp_rate = self._linear_slope(temp_pts)
+            rec_pts = [(s.elapsed - deact_time, s.env.get("temperature"))
+                       for s in rec_samples if "temperature" in s.env]
+            coast_over = 0.0
+            coast_dur = 0.0
+            if rec_pts:
+                dv = temp_pts[-1][1] or 0
+                pk = dv
+                pk_t = 0.0
+                for t, v in rec_pts:
+                    if v is not None and v > pk:
+                        pk = v
+                        pk_t = t
+                coast_over = pk - dv
+                coast_dur = pk_t
+            prop_cal = PropertyCalibration(
+                property_name="temperature",
+                rate=temp_rate,
+                coast_overshoot=coast_over,
+                coast_duration=coast_dur,
+                coast_profile=[(t, v) for t, v in rec_pts if v is not None],
+            )
+            state_cal.properties["temperature"] = prop_cal
+            rate_fpm = temp_rate * 9/5 * 60
+            self._status(
+                f"  thermal contribution: {rate_fpm:+.3f}°F/min  "
+                f"coast={coast_over*9/5:+.3f}°F over {coast_dur:.0f}s")
+        # Note: thermal_byproduct_rate is not set because for
+        # scheduled devices, the thermal effect IS the primary measurement
+        return state_cal
+
     # ── Phase 2: Analyze ─────────────────────────────────────────
 
     def analyze_recording(self, recording: Recording,
@@ -1155,17 +1391,34 @@ class CalibrationEngine:
             env_cal = EnvironmentCalibration(environment_name=self._env_name)
 
         targets = device_names or list(self._devices.keys())
-        calibratable = []
+
+        # Categorize devices
+        energy_devices = []
+        transfer_devices = []
+        scheduled_devices = []
         for name in targets:
             dcfg = self._device_configs.get(name, {})
-            if dcfg.get("type") == "transfer":
-                self._status(f"Skipping {name} (transfer device)")
-                continue
-            calibratable.append(name)
+            dev_type = dcfg.get("type", "energy")
+            is_scheduled = dcfg.get("scheduled", False)
+            intended = dcfg.get("intended_properties", {})
 
-        self._status(f"\nCalibrating {len(calibratable)} device(s)")
+            if dev_type == "transfer":
+                transfer_devices.append(name)
+            elif is_scheduled or not intended:
+                scheduled_devices.append(name)
+            else:
+                energy_devices.append(name)
 
-        for name in calibratable:
+        total = len(energy_devices) + len(transfer_devices) + len(scheduled_devices)
+        self._status(
+            f"\nCalibrating {total} device(s): "
+            f"{len(energy_devices)} energy, "
+            f"{len(transfer_devices)} transfer, "
+            f"{len(scheduled_devices)} scheduled"
+        )
+
+        # ── Energy devices (heater, humidifier) ──────────────────
+        for name in energy_devices:
             dcfg = self._device_configs[name]
             intended = _map_intended_properties(
                 dcfg.get("intended_properties", {})
@@ -1195,12 +1448,110 @@ class CalibrationEngine:
             dcal.calibrated_at = time.time()
             env_cal.devices[name] = dcal
 
+            # If this was the heater, update in-memory calibration
+            # so subsequent devices can use it for preconditioning
+            # without requiring a file round-trip
+            heater_name = self._find_heater_device()
+            if name == heater_name:
+                self._heater_cal = dcal
+                self._status(f"Heater calibration available for preconditioning")
+
+        # ── Scheduled devices (lights) ───────────────────────────
+        for name in scheduled_devices:
+            device = self._devices[name]
+            states = device.get_states()
+            active_states = [s for s in states if s != "off"]
+
+            dcal = DeviceCalibration(device_name=name)
+            amb = self._read_ambient()
+            if amb:
+                dcal.ambient_temp_during_cal = amb.get("temperature")
+
+            for state in active_states:
+                self._status(f"\n{'='*50}")
+                self._status(f"Recording {name} (scheduled) state: {state}")
+                self._status(f"{'='*50}")
+
+                recording = self.record_scheduled_device(name, state)
+                if recording is None:
+                    continue
+
+                self._status(f"\nAnalyzing {name} / {state}...")
+                state_cal = self.analyze_scheduled(recording)
+                dcal.states[state] = state_cal
+
+            dcal.calibrated_at = time.time()
+            env_cal.devices[name] = dcal
+
+        # ── Transfer devices (fan) ───────────────────────────────
+        for name in transfer_devices:
+            device = self._devices[name]
+            states = device.get_states()
+            active_states = [s for s in states if s != "off"]
+
+            dcal = DeviceCalibration(device_name=name)
+            amb = self._read_ambient()
+            if amb:
+                dcal.ambient_temp_during_cal = amb.get("temperature")
+
+            for state in active_states:
+                self._status(f"\n{'='*50}")
+                self._status(f"Recording {name} (transfer) state: {state}")
+                self._status(f"{'='*50}")
+
+                samples = self.record_transfer_device(name, state)
+                if samples is None:
+                    continue
+
+                self._status(f"\nAnalyzing {name} / {state}...")
+                state_cal = self.analyze_transfer(samples, state)
+
+                # Read power for fan
+                if hasattr(device, "read_power"):
+                    pw = device.read_power()
+                    if pw is not None:
+                        state_cal.power_draw = pw
+
+                # Best-differential selection: keep existing if it had
+                # a larger differential
+                existing_dcal = env_cal.devices.get(name)
+                if existing_dcal and state in existing_dcal.states:
+                    existing_state = existing_dcal.states[state]
+                    for prop in list(state_cal.conductance.keys()):
+                        new_diff = state_cal.conductance_differential.get(prop, 0)
+                        old_diff = existing_state.conductance_differential.get(prop, 0)
+                        if old_diff > new_diff:
+                            state_cal.conductance[prop] = existing_state.conductance[prop]
+                            state_cal.conductance_differential[prop] = old_diff
+                            self._status(
+                                f"  {prop}: KEPT existing conductance "
+                                f"(diff={old_diff:.1f}K > {new_diff:.1f}K)"
+                            )
+
+                dcal.states[state] = state_cal
+
+            dcal.calibrated_at = time.time()
+            env_cal.devices[name] = dcal
+
         if include_passive:
             passive_samples = self.record_passive()
             passive_result = self.analyze_passive(passive_samples)
             for prop, data in passive_result.items():
-                env_cal.passive_conductance[prop] = data["g_passive"]
-                env_cal.time_constant[prop] = data["tau"]
+                new_diff = abs(data["differential"])
+                existing_diff = abs(env_cal.passive_differential.get(prop, 0))
+
+                if new_diff >= existing_diff:
+                    env_cal.passive_conductance[prop] = data["g_passive"]
+                    env_cal.time_constant[prop] = data["tau"]
+                    env_cal.passive_differential[prop] = new_diff
+                    self._status(
+                        f"  {prop}: accepted (diff={new_diff:.1f}K)"
+                    )
+                else:
+                    self._status(
+                        f"  {prop}: KEPT existing (existing diff="
+                        f"{existing_diff:.1f}K > new {new_diff:.1f}K)"
+                    )
 
         env_cal.calibrated_at = time.time()
         return env_cal
@@ -1234,6 +1585,7 @@ def _cal_to_dict(cal: EnvironmentCalibration) -> dict:
         "calibrated_at": cal.calibrated_at,
         "passive_conductance": cal.passive_conductance,
         "time_constant": cal.time_constant,
+        "passive_differential": cal.passive_differential,
         "devices": {
             name: {
                 "calibrated_at": dcal.calibrated_at,
@@ -1243,6 +1595,8 @@ def _cal_to_dict(cal: EnvironmentCalibration) -> dict:
                         "power_draw": scal.power_draw,
                         "thermal_byproduct_rate": scal.thermal_byproduct_rate,
                         "avg_temp_during_activation": scal.avg_temp_during_activation,
+                        "conductance": scal.conductance if scal.conductance else None,
+                        "conductance_differential": scal.conductance_differential if scal.conductance_differential else None,
                         "properties": {
                             prop: {
                                 "rate": pcal.rate,
@@ -1268,6 +1622,7 @@ def _dict_to_cal(data: dict) -> EnvironmentCalibration:
         calibrated_at=data.get("calibrated_at", 0),
         passive_conductance=data.get("passive_conductance", {}),
         time_constant=data.get("time_constant", {}),
+        passive_differential=data.get("passive_differential", {}),
     )
     for name, ddata in data.get("devices", {}).items():
         dcal = DeviceCalibration(
@@ -1281,6 +1636,8 @@ def _dict_to_cal(data: dict) -> EnvironmentCalibration:
                 power_draw=sdata.get("power_draw"),
                 thermal_byproduct_rate=sdata.get("thermal_byproduct_rate"),
                 avg_temp_during_activation=sdata.get("avg_temp_during_activation"),
+                conductance=sdata.get("conductance") or {},
+                conductance_differential=sdata.get("conductance_differential") or {},
             )
             for prop, pdata in sdata.get("properties", {}).items():
                 pcal = PropertyCalibration(

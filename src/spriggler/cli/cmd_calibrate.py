@@ -190,6 +190,14 @@ def calibrate_run(ctx, environment, device, include_passive):
                     f"      thermal byproduct: {byproduct_fpm:+.3f}°F/min"
                 )
 
+            if scal.conductance:
+                for prop, g in scal.conductance.items():
+                    tau = 1.0 / g if g != 0 else float("inf")
+                    console.print(
+                        f"      conductance ({prop}): g={g:.6f}/s  "
+                        f"τ={tau:.0f}s ({tau/60:.1f}min)"
+                    )
+
     if env_cal.passive_conductance:
         console.print(f"\n  [{C_CMD}]Passive Conductance[/{C_CMD}]")
         for prop, g in env_cal.passive_conductance.items():
@@ -315,6 +323,18 @@ def calibrate_show(ctx, environment, device):
                         f"{pcal.coast_duration:.0f}s",
                         power_str, byproduct_str,
                     )
+
+                # Transfer device conductance
+                if scal.conductance:
+                    for prop, g in scal.conductance.items():
+                        tau = 1.0 / g if g != 0 else float("inf")
+                        t.add_row(
+                            state, f"{prop} conductance",
+                            f"g={g:.6f}/s", f"τ={tau:.0f}s",
+                            f"{tau/60:.1f}min",
+                            f"{scal.power_draw:.0f}W" if scal.power_draw else "—",
+                            "—",
+                        )
 
             console.print(t)
 

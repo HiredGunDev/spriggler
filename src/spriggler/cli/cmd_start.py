@@ -1,102 +1,169 @@
-"""spriggler start — launch the controller daemon."""
+"""spriggler start — launch the controller."""
 
 import click
-
-from spriggler.cli._style import in_development
 
 
 @click.command()
 @click.option(
     "--foreground", "-f",
     is_flag=True,
-    help="Run in foreground (don't daemonize).  Useful for debugging.",
+    help="Run in foreground with live dashboard.  Ctrl-C to stop.",
 )
 @click.option(
     "--environment", "-e",
-    multiple=True,
-    help="Control only named environment(s).  May be repeated.  "
-         "Default: all configured environments.",
+    help="Control only this environment.  Default: first configured.",
 )
 @click.option(
     "--dry-run",
     is_flag=True,
-    help="Evaluate control decisions but don't actuate devices.  "
-         "Logs what WOULD happen.",
+    help="Evaluate control decisions but don't actuate devices.",
 )
 @click.option(
-    "--safe-mode",
-    is_flag=True,
-    help="Start in safe mode: energy-adding devices off, transfers "
-         "evaluated but conservative.  Useful after config changes.",
+    "--cycle-interval",
+    type=float,
+    default=3.0,
+    help="Seconds between control cycles.  Default: 3.",
 )
 @click.pass_context
-def start(ctx, foreground, environment, dry_run, safe_mode):
-    """Start the Spriggler controller daemon.
+def start(ctx, foreground, environment, dry_run, cycle_interval):
+    """Start the Spriggler controller.
 
     Loads config and calibration data, connects to sensors and devices,
-    and begins the control loop.  Runs as a background daemon by default;
-    use --foreground for interactive debugging.
+    and begins the control loop.
 
     \b
-    The control loop runs one cycle per second (configurable).  Each cycle:
-      1. Read all sensor states, classify freshness
-      2. Convert derived → fundamental quantities (physics plugins)
-      3. Fuse sensor readings (Kalman filter)
-      4. Evaluate energy devices (hysteresis + coast compensation)
-      5. Evaluate transfer devices (differential-based)
-      6. Check schedule anticipation (Phase 2+)
-      7. Resolve conflicts, select actuator commands
-      8. Command devices, start verification timers
-      9. Write status.json for UI consumption
-      10. Log structured cycle data
+    Foreground mode (-f) shows a live dashboard with environment state,
+    device status, sensor health, and control messages.  Background
+    mode writes status to status.json for external monitoring.
 
     \b
     Examples:
-      spriggler start                    Start daemon, all environments
-      spriggler start -f                 Foreground mode
-      spriggler start -e seedling        Control only the seedling pod
-      spriggler start --dry-run -f       See decisions without acting
+      spriggler start -f                 Foreground with dashboard
+      spriggler start -f --dry-run       See decisions without acting
+      spriggler start -f -e seedling     Control one environment
     """
-    in_development(
-        command="spriggler start",
-        phase="Phase 1 (Single Environment Controller)",
-        summary=(
-            "Launches the main control daemon.  This is the heart of "
-            "Spriggler — the control loop that reads sensors, makes "
-            "physics-informed decisions, and commands actuators.\n\n"
-            "The daemon writes runtime state to status.json for the "
-            "web UI (Spriggle) and any external monitoring.  It uses "
-            "structured JSON logging for all events."
-        ),
-        notes=(
-            "The control loop is written from scratch for v0.5.  The v0.4 "
-            "daemon's loop had the trajectory planner baked in and is not "
-            "salvageable.  The new loop is simple: read → convert → fuse → "
-            "decide → command → log.  Each step is a clean function.\n\n"
-            "The --foreground flag is critical for development — it keeps "
-            "stdout attached and lets you Ctrl-C cleanly.\n\n"
-            "The --dry-run flag evaluates everything but sends no commands "
-            "to devices.  The log shows what WOULD have been commanded.  "
-            "Essential for validating control logic before going live.\n\n"
-            "Safe mode starts with all energy-adding devices OFF and only "
-            "allows transfer devices (fans/pumps) that have a favorable "
-            "differential.  Useful after changing config or recalibrating."
-        ),
-        depends_on=[
-            "spriggler config validate  (valid config required)",
-            "spriggler calibrate run    (calibration data required)",
-            "Sensor drivers (govee BLE, wired, etc.)",
-            "Device drivers (KASA, VeSync, etc.)",
-            "Physics plugin library",
-            "Kalman filter (sensor fusion)",
-            "Hysteresis controller (energy devices)",
-            "Differential controller (transfer devices)",
-        ],
-        salvage_from_v04=[
-            "sensors/govee.py  — BLE scanner with _sample_time",
-            "devices/kasa.py   — KASA discovery and connection manager",
-            "devices/vesync.py — Rate limiter wrapper",
-            "devices/vesync_device.py — Fire-and-forget pattern",
-            "struct_log.py     — Structured JSON logger",
-        ],
+    import time
+    from pathlib import Path
+    from rich.live import Live
+    from spriggler.cli._style import console, C_BRAND, C_OK, C_WARN, C_ERROR, C_NOTE
+    from spriggler.config.loader import load_config, ConfigError
+    from spriggler.calibrate.engine import load_calibration
+    from spriggler.controller.loop import EnvironmentController
+    from spriggler.controller.dashboard import render_dashboard
+
+    home = ctx.obj["home"]
+
+    # Load config
+    try:
+        cfg = load_config(home)
+    except ConfigError as e:
+        console.print(f"[{C_ERROR}]Config error:[/{C_ERROR}] {e}")
+        raise SystemExit(1)
+
+    cfg["_home"] = str(home)
+
+    # Determine environment
+    envs = cfg.get("environments", {})
+    if environment:
+        if environment not in envs:
+            console.print(
+                f"[{C_ERROR}]Unknown environment: '{environment}'[/{C_ERROR}]\n"
+                f"  Available: {', '.join(envs.keys())}"
+            )
+            raise SystemExit(1)
+        env_name = environment
+    else:
+        # First controlled environment
+        controlled = [n for n, e in envs.items()
+                      if e.get("controlled", True)]
+        if not controlled:
+            console.print(f"[{C_ERROR}]No controlled environments in config[/{C_ERROR}]")
+            raise SystemExit(1)
+        env_name = controlled[0]
+
+    # Load calibration
+    cal = load_calibration(env_name, home)
+    if cal is None:
+        console.print(
+            f"[{C_ERROR}]No calibration data for '{env_name}'[/{C_ERROR}]\n"
+            f"  Run: spriggler calibrate run -e {env_name}"
+        )
+        raise SystemExit(1)
+
+    if not cal.devices:
+        console.print(
+            f"[{C_ERROR}]Calibration has no device data[/{C_ERROR}]\n"
+            f"  Run: spriggler calibrate run -e {env_name}"
+        )
+        raise SystemExit(1)
+
+    # Create controller
+    controller = EnvironmentController(
+        cfg=cfg,
+        environment=env_name,
+        calibration=cal,
+        dry_run=dry_run,
     )
+
+    if dry_run:
+        console.print(f"[{C_WARN}]DRY RUN — no devices will be commanded[/{C_WARN}]")
+
+    console.print(f"[{C_BRAND} bold]Starting Spriggler — {env_name}[/{C_BRAND} bold]\n")
+
+    # Setup
+    if not controller.setup():
+        console.print(f"\n[{C_ERROR}]Controller setup failed[/{C_ERROR}]")
+        raise SystemExit(1)
+
+    # Run
+    previous_env = None
+
+    if foreground:
+        try:
+            with Live(
+                render_dashboard(controller.state, console.width),
+                console=console,
+                refresh_per_second=2,
+                screen=True,
+            ) as live:
+                while True:
+                    previous_env = controller.cycle(previous_env)
+                    live.update(
+                        render_dashboard(controller.state, console.width)
+                    )
+                    time.sleep(cycle_interval)
+        except KeyboardInterrupt:
+            console.print(f"\n[{C_NOTE}]Shutting down...[/{C_NOTE}]")
+    else:
+        # Background mode — just run the loop, write status.json
+        console.print(f"[{C_NOTE}]Running in background mode. Ctrl-C to stop.[/{C_NOTE}]")
+        try:
+            while True:
+                previous_env = controller.cycle(previous_env)
+                # TODO: write status.json
+                time.sleep(cycle_interval)
+        except KeyboardInterrupt:
+            console.print(f"\n[{C_NOTE}]Shutting down...[/{C_NOTE}]")
+
+    # Cleanup — log stop
+    if hasattr(controller, '_slog') and controller._slog:
+        controller._slog.log_stop(controller.state.cycle_count)
+        controller._slog.close()
+
+    try:
+        from spriggler.sensors.govee import GoveeSensor
+        GoveeSensor.stop_scanner()
+    except Exception:
+        pass
+    try:
+        from spriggler.devices.kasa_mgr import shutdown_kasa_manager
+        shutdown_kasa_manager()
+    except Exception:
+        pass
+    try:
+        from spriggler.devices.vesync_mgr import shutdown_vesync_manager
+        shutdown_vesync_manager()
+    except Exception:
+        pass
+
+    console.print(f"[{C_OK}]Spriggler stopped[/{C_OK}]")

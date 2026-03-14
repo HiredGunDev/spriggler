@@ -49,15 +49,21 @@ class KasaConnectionManager:
 
     REDISCOVERY_INTERVAL = 300  # Re-discover every 5 min (handles IP changes)
     UPDATE_INTERVAL = 5         # Refresh device state every 5s
+    CONTROL_TIMEOUT = 5.0       # Timeout for control loop operations
 
     def __init__(self, discovery_timeout: int = 10) -> None:
         self._discovery_timeout = discovery_timeout
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
+        self._update_thread: threading.Thread | None = None
         self._devices: dict[str, _CachedDevice] = {}
         self._lock = threading.Lock()
         self._last_discovery = 0.0
         self._started = False
+        self._stopping = False
+        # Cached power readings — updated by background thread
+        self._power_cache: dict[str, float] = {}  # "strip:plug" → watts
+        self._power_lock = threading.Lock()
 
     def start(self) -> None:
         if self._started:
@@ -74,15 +80,28 @@ class KasaConnectionManager:
         if self._loop is None:
             raise KasaError("Failed to start KASA event loop")
         self._started = True
+        self._stopping = False
+
+        # Start background power update thread
+        self._update_thread = threading.Thread(
+            target=self._background_update_loop,
+            name="kasa-power-updater",
+            daemon=True,
+        )
+        self._update_thread.start()
+
         log.info("KASA connection manager started")
 
     def stop(self) -> None:
         if not self._started:
             return
+        self._stopping = True
         if self._loop and self._loop.is_running():
             self._loop.call_soon_threadsafe(self._loop.stop)
         if self._thread:
             self._thread.join(timeout=5.0)
+        if self._update_thread:
+            self._update_thread.join(timeout=5.0)
         self._started = False
         log.info("KASA connection manager stopped")
 
@@ -102,15 +121,21 @@ class KasaConnectionManager:
                     pass
             self._loop.close()
 
-    def _run_async(self, coro, timeout: float = 60.0):
-        """Submit a coroutine to the background loop and block for result."""
+    def _run_async(self, coro, timeout: float = 10.0):
+        """Submit a coroutine to the background loop and block for result.
+
+        Default timeout is 10s.  Control loop operations should use
+        shorter timeouts (3-5s) to avoid stalling the loop.
+        """
         if not self._loop or not self._loop.is_running():
             raise KasaError("KASA connection manager not running")
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         try:
             return future.result(timeout=timeout)
         except asyncio.TimeoutError:
-            raise KasaError("KASA operation timed out")
+            future.cancel()
+            raise KasaError(
+                f"KASA operation timed out after {timeout:.0f}s")
         except Exception as e:
             raise KasaError(f"KASA error: {e}") from e
 
@@ -240,7 +265,11 @@ class KasaConnectionManager:
         return plug.is_on
 
     def read_power(self, plug: object) -> float | None:
-        """Read current power in watts.  Returns None if not supported."""
+        """Read current power in watts.  Returns None if not supported.
+
+        This performs a blocking network call.  For the control loop,
+        use read_power_cached() instead.
+        """
         import kasa
         if not plug.has_emeter:
             return None
@@ -249,6 +278,73 @@ class KasaConnectionManager:
         if energy is None:
             return None
         return energy.current_consumption
+
+    def read_power_cached(self, strip_name: str,
+                          plug_name: str) -> float | None:
+        """Return the most recent cached power reading.
+
+        Non-blocking.  Updated by the background thread every
+        UPDATE_INTERVAL seconds.  Returns None if no reading yet.
+        """
+        key = f"{strip_name}:{plug_name}"
+        with self._power_lock:
+            return self._power_cache.get(key)
+
+    def _background_update_loop(self) -> None:
+        """Periodically refresh power readings for all known plugs.
+
+        Runs in its own thread.  Updates are submitted to the async
+        event loop with a short timeout — if one plug hangs, the
+        others still get updated.
+        """
+        log.info("Background power updater started")
+        while not self._stopping:
+            time.sleep(self.UPDATE_INTERVAL)
+            if self._stopping:
+                break
+
+            with self._lock:
+                devices = dict(self._devices)
+
+            for alias, cached in devices.items():
+                if self._stopping:
+                    break
+                try:
+                    # Update the parent device (refreshes all children)
+                    self._run_async(
+                        cached.device.update(),
+                        timeout=self.CONTROL_TIMEOUT,
+                    )
+
+                    # Cache power for each child plug
+                    import kasa
+                    for child_name, child in cached.children.items():
+                        key = f"{alias}:{child_name}"
+                        if child.has_emeter:
+                            energy = child.modules.get(kasa.Module.Energy)
+                            if energy:
+                                watts = energy.current_consumption
+                                with self._power_lock:
+                                    self._power_cache[key] = watts
+
+                    # Also cache for standalone devices
+                    if not cached.children and cached.device.has_emeter:
+                        key = f"{alias}:{alias}"
+                        energy = cached.device.modules.get(
+                            kasa.Module.Energy)
+                        if energy:
+                            with self._power_lock:
+                                self._power_cache[key] = \
+                                    energy.current_consumption
+
+                except KasaError as e:
+                    log.debug("Background update failed for %s: %s",
+                              alias, e)
+                except Exception as e:
+                    log.debug("Background update error for %s: %s",
+                              alias, e)
+
+        log.info("Background power updater stopped")
 
     # ── Countdown timers ─────────────────────────────────────────
 
